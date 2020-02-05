@@ -1,2 +1,2 @@
 # cliente-servidor
-Desarrollo de un protocolo de comunicaciones para un sistema de lectura y almacenamiento de datos de fabricación, empleando el modelo cliente-servidor. Los clientes serán los dispositivos encargados de realizar las medidas en los diferentes puntos de fabricación y el servidor será un equipo informático destinado a recibir los datos de los clientes y almacenarlos para su tratamiento.
+Desarrollo de un protocolo de comunicaciones para un sistema de lectura y almacenamiento de datos de fabricación, empleando el modelo cliente-servidor.
