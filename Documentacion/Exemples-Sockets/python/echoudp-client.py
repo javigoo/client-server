@@ -10,7 +10,7 @@ SYNOPSIS
 
 DESCRIPTION
 
-    Creates a ECHO/UDP client, connects to server, sends data and 
+    Creates a ECHO/UDP client, connects to server, sends data and
     prints the returned data.
     Default port 1234, default address=127.0.0.1
 
@@ -29,13 +29,13 @@ LICENSE
 
 VERSION
 
-    0.0.1 
+    0.0.1
 """
 
 import sys, os, traceback, optparse
 import time, datetime
 import socket
- 
+
 
 __program__ = "echoudp-client"
 __version__ = '0.0.1'
@@ -87,7 +87,7 @@ if __name__ == '__main__':
         now_time = time.time()
         if options.verbose: print time.asctime()
         if options.verbose: print 'TOTAL TIME:', (now_time - start_time), "(seconds)"
-        if options.verbose: print '          :', datetime.timedelta(seconds=(now_time - start_time)) 
+        if options.verbose: print '          :', datetime.timedelta(seconds=(now_time - start_time))
         sys.exit(0)
     except KeyboardInterrupt, e: # Ctrl-C
         raise e
@@ -98,7 +98,3 @@ if __name__ == '__main__':
         print str(e)
         traceback.print_exc()
         os._exit(1)
-
-
-
-
