@@ -49,16 +49,18 @@ __vcs_id__ = '$Id$'
 
 
 def setup():
+    global socketTCP, socketUDP
+
     socketUDP = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
     debug("UDP socket initialized")
     socketTCP = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
     debug("TCP socket initialized")
     configuration = read_configuration()
     debug("Configuration data file initialized")
-    #print(configuration))
+    #print(configuration)
     authorized = read_authorized()
-    print(authorized)
     debug("Authorized devices file initialized")
+    #print(authorized)
 
 def debug(msg):
     if debugger_opt: print(time.strftime("%H:%M:%S") + ": DEBUG -> " + str(msg))
@@ -73,13 +75,6 @@ def read_configuration():
 
     return configuration_data(id, elements, TCP, server, UDP)
 
-def read_authorized():
-    with open(authorized_opt) as file:
-        authorized = file.readline().split()
-        print(authorized)
-
-    return authorized
-
 class configuration_data:
     def __init__(self, id, elements, TCP, server, UDP):
         self.id = id
@@ -91,14 +86,45 @@ class configuration_data:
     def __str__(self):
         return('Id = %s\nElements = %s\nTCP = %s\nServer = %s\nUDP = %s' % (self.id, self.elements, self.TCP, self.server, self.UDP))
 
+def read_authorized():
+    authorized=[]
+    with open(authorized_opt) as file:
+        for line in file:
+            authorized += line.split()
+
+    return authorized
+
+def register():
+    debug("Register on the server initialized")
+    pass
+    debug("Register on the server finished")
+
+def periodic_communication():
+    debug("Periodic communication with the server initialized")
+    pass
+    debug("Periodic communication with the server finished")
+
+def send_data():
+    debug("Send data to the server initialized")
+    pass
+    debug("Send data to the server finished")
+
+def wait_connections():
+    debug("Wait for server tcp connections initialized")
+    pass
+    debug("Wait for server tcp connections finished")
+
 def main():
-    #setup()
-    print('esaffsdNNJFJBGJSDBVFBVAHJAKFBVJBSGZDJBHJDSOGJFKD')
+    setup()
+    register()
+    periodic_communication()
+    send_data()
+    wait_connections()
 
 if __name__ == '__main__':
     try:
         # Global variables
-        global debugger_opt, configuration_opt, authorized_opt, socketTCP, socketUDP
+        global debugger_opt, configuration_opt, authorized_opt
 
         # Parser options
         parser = optparse.OptionParser(formatter=optparse.TitledHelpFormatter(), usage=globals()["__doc__"],version=__version__)
