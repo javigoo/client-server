@@ -57,7 +57,7 @@ def setup():
     debug("TCP socket initialized")
     configuration = read_configuration()
     debug("Configuration data file initialized")
-    #print(configuration)
+    print(configuration)
     authorized = read_authorized()
     debug("Authorized devices file initialized")
     #print(authorized)
@@ -115,6 +115,7 @@ def wait_connections():
     debug("Wait for server tcp connections finished")
 
 def main():
+    # pdu_udp & pdu_tcp
     setup()
     register()
     periodic_communication()
