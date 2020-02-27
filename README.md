@@ -1,2 +1,2 @@
-# cliente-servidor
-Desarrollo de un protocolo de comunicaciones para un sistema de lectura y almacenamiento de datos de fabricación, empleando el modelo cliente-servidor.
+# client-server
+Development of a communications protocol for a manufacturing data reading and storage system, using the client-server model.
