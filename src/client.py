@@ -36,8 +36,7 @@ VERSION
     0.0.1
 """
 
-import sys, os, traceback, optparse
-import time, datetime
+import sys, os, traceback, optparse, time, random, struct
 import socket, select
 
 __program__ = "client"
@@ -47,19 +46,52 @@ __copyright__ = 'Copyright (c) 2020  Javier Roig'
 __license__ = 'GPL3+'
 __vcs_id__ = '$Id$'
 
+# Client states
+DISCONNECTED = 0xa0
+NOT_REGISTERED = 0xa1
+WAIT_ACK_REG = 0xa2
+WAI_INFO = 0xa3
+WAIT_ACK_INFO = 0xa4
+REGISTERED = 0xa5
+SEND_ALIVE =  0xa6
+
+# Register packages
+REG_REQ = 0x00
+REG_INFO = 0x01
+REG_ACK = 0x02
+INFO_ACK = 0x03
+REG_NACK = 0x04
+INFO_NACK = 0x05
+REG_REJ =  0x06
+
+class pdu_udp():
+    """Protocol Data Unit (PDU) for User Data Protocol (UDP)"""
+    def __init__(self, pkg, id, rand, data):
+        self.pkg = pkg
+        self.id = id
+        self.rand = rand
+        self.data = data
+
+    def __str__(self):
+        return('pkg = %s\n id = %s\n rand = %s\n data = %s' % (self.pkg, self.id, self.rand, self.data))
+
+#################################### SETUP #####################################
 
 def setup():
-    global socketTCP, socketUDP
+    global state, socketTCP, socketUDP, configuration, authorized
+
+    state = DISCONNECTED
 
     socketUDP = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
     debug("UDP socket initialized")
     socketTCP = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
     debug("TCP socket initialized")
+
     configuration = read_configuration()
-    debug("Configuration data file initialized")
-    print(configuration)
+    debug("Configuration data file loaded")
+    #print(configuration)
     authorized = read_authorized()
-    debug("Authorized devices file initialized")
+    debug("Authorized devices file loaded")
     #print(authorized)
 
 def debug(msg):
@@ -67,11 +99,11 @@ def debug(msg):
 
 def read_configuration():
     with open(configuration_opt) as file:
-        id = file.readline().strip('Id=,\n')
-        elements = file.readline().strip('Elements=,\n').split(';')
-        TCP = file.readline().strip('Local-TCP=,\n')
-        server = file.readline().strip('Server=,\n')
-        UDP = file.readline().strip('Server-UDP=,\n')
+        id = file.readline().strip('Id =,\n')
+        elements = file.readline().strip('Elements =,\n').split(';')
+        TCP = file.readline().strip('Local-TCP =,\n')
+        server = file.readline().strip('Server =,\n')
+        UDP = file.readline().strip('Server-UDP =,\n')
 
     return configuration_data(id, elements, TCP, server, UDP)
 
@@ -94,28 +126,55 @@ def read_authorized():
 
     return authorized
 
+
+################################### REGISTER ###################################
+
 def register():
     debug("Register on the server initialized")
-    pass
+    # Timers and thresholds
+    t = 1
+    u = 2
+    n = 7
+    o = 3
+    p = 3
+    q = 3
+
+    state = NOT_REGISTERED
+
+    #data = bytearray("00000000", 'utf-8')
+    #print(data)
+    pdu = struct.pack('Bc', REG_REQ, b"0")
+    print(pdu)
+    addr = (configuration.server, configuration.UDP)
+    #socketUDP.sendto(pdu, addr)
+
     debug("Register on the server finished")
+
+########################### PERIODIC COMMUNICATION #############################
 
 def periodic_communication():
     debug("Periodic communication with the server initialized")
     pass
     debug("Periodic communication with the server finished")
 
+################################# SEND DATA ####################################
+
+
 def send_data():
     debug("Send data to the server initialized")
     pass
     debug("Send data to the server finished")
+
+############################## WAIT CONNECTIONS ################################
 
 def wait_connections():
     debug("Wait for server tcp connections initialized")
     pass
     debug("Wait for server tcp connections finished")
 
+#################################### MAIN ######################################
+
 def main():
-    # pdu_udp & pdu_tcp
     setup()
     register()
     periodic_communication()
