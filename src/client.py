@@ -68,12 +68,21 @@ class pdu_udp():
     """Protocol Data Unit (PDU) for User Data Protocol (UDP)"""
     def __init__(self, pkg, id, rand, data):
         self.pkg = pkg
+
+        #id_bytes=[]
+        #for byte in id:
+        #    id_bytes = bytes(byte,'utf-8')
         self.id = id
+
+        #rand_bytes=[]
+        #for byte in rand:
+        #    rand_bytes.append(bytes(byte,'utf-8'))
         self.rand = rand
+
         self.data = data
 
     def __str__(self):
-        return('pkg = %s\n id = %s\n rand = %s\n data = %s' % (self.pkg, self.id, self.rand, self.data))
+        return(' pkg = %s\n id = %s\n rand = %s\n data = %s' % (self.pkg, self.id, self.rand, self.data))
 
 #################################### SETUP #####################################
 
@@ -81,6 +90,7 @@ def setup():
     global state, socketTCP, socketUDP, configuration, authorized
 
     state = DISCONNECTED
+    debug("State = DISCONNECTED")
 
     socketUDP = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
     debug("UDP socket initialized")
@@ -99,11 +109,11 @@ def debug(msg):
 
 def read_configuration():
     with open(configuration_opt) as file:
-        id = file.readline().strip('Id =,\n')
-        elements = file.readline().strip('Elements =,\n').split(';')
-        TCP = file.readline().strip('Local-TCP =,\n')
-        server = file.readline().strip('Server =,\n')
-        UDP = file.readline().strip('Server-UDP =,\n')
+        id = file.readline().strip('Id =\n')
+        elements = file.readline().strip('Params =\n').split(';')
+        TCP = file.readline().strip('Local-TCP =\n')
+        server = file.readline().strip('Server =\n')
+        UDP = file.readline().strip('Server-UDP =\n')
 
     return configuration_data(id, elements, TCP, server, UDP)
 
@@ -140,13 +150,12 @@ def register():
     q = 3
 
     state = NOT_REGISTERED
+    debug("State = NOT_REGISTERED")
 
-    #data = bytearray("00000000", 'utf-8')
-    #print(data)
-    pdu = struct.pack('Bc', REG_REQ, b"0")
-    print(pdu)
-    addr = (configuration.server, configuration.UDP)
-    #socketUDP.sendto(pdu, addr)
+    pdu = struct.pack('1B 13s 9s 61s', REG_REQ, bytes(configuration.id, 'utf-8'), b'00000000', b'')
+    addr = (configuration.server, int(configuration.UDP))
+
+    send = socketUDP.sendto(pdu, addr)
 
     debug("Register on the server finished")
 
@@ -202,12 +211,12 @@ if __name__ == '__main__':
 
         # Exception handling
     except KeyboardInterrupt: # Ctrl-C
-        print ('Keyboard Interruption')
+        print ("Keyboard Interruption")
         raise
     except SystemExit: # sys.exit()
-        print ('System Exit')
+        print ("System Exit")
         raise
     except Exception:
-        print ('Unexpected Exception')
+        print ("Unexpected Exception")
         traceback.print_exc()
         os._exit(1)
