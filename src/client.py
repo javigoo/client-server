@@ -68,17 +68,8 @@ class pdu_udp():
     """Protocol Data Unit (PDU) for User Data Protocol (UDP)"""
     def __init__(self, pkg, id, rand, data):
         self.pkg = pkg
-
-        #id_bytes=[]
-        #for byte in id:
-        #    id_bytes = bytes(byte,'utf-8')
         self.id = id
-
-        #rand_bytes=[]
-        #for byte in rand:
-        #    rand_bytes.append(bytes(byte,'utf-8'))
         self.rand = rand
-
         self.data = data
 
     def __str__(self):
@@ -98,7 +89,7 @@ def setup():
     debug("TCP socket initialized")
 
     configuration = read_configuration()
-    debug("Configuration data file loaded")
+    debug("Configuration data file loaded - Device: {}".format(configuration.id))
     #print(configuration)
     authorized = read_authorized()
     debug("Authorized devices file loaded")
@@ -152,12 +143,30 @@ def register():
     state = NOT_REGISTERED
     debug("State = NOT_REGISTERED")
 
+    # Refactorizar esta basura pls
     pdu = struct.pack('1B 13s 9s 61s', REG_REQ, bytes(configuration.id, 'utf-8'), b'00000000', b'')
     addr = (configuration.server, int(configuration.UDP))
+    sent = socketUDP.sendto(pdu, addr)
+    debug("Send: bytes={}, Packet={}, id={}, rand={}, data={}".format(sent, "REG_REQ", configuration.id, "00000000", "" ))
 
-    send = socketUDP.sendto(pdu, addr)
+    state = WAIT_ACK_REG
+    debug("State = WAIT_ACK_REG")
+
+    pdu, addr = socketUDP.recvfrom(struct.calcsize('1B 13s 9s 61s'))
+    received = struct.unpack('1B 13s 9s 61s', pdu)
+    data = packet_data_parser(received)
+    debug("Received: bytes={}, Packet={}, id={}, rand={}, data={}".format(0,data[0],data[1],data[2],data[3]))
+
+
+    #current_t = time.time()
+    #while current_t < t:
+    #    pass
 
     debug("Register on the server finished")
+
+# Hacer un parser de verdad
+def packet_data_parser(packet):
+    return packet[0], packet[1].decode(), packet[2].decode(), str(packet[3]).strip("b'")[:5]
 
 ########################### PERIODIC COMMUNICATION #############################
 
@@ -167,7 +176,6 @@ def periodic_communication():
     debug("Periodic communication with the server finished")
 
 ################################# SEND DATA ####################################
-
 
 def send_data():
     debug("Send data to the server initialized")
@@ -186,9 +194,9 @@ def wait_connections():
 def main():
     setup()
     register()
-    periodic_communication()
-    send_data()
-    wait_connections()
+    #periodic_communication()
+    #send_data()
+    #wait_connections()
 
 if __name__ == '__main__':
     try:
