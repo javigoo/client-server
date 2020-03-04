@@ -127,7 +127,6 @@ def read_authorized():
 
     return authorized
 
-
 ################################### REGISTER ###################################
 
 def register():
@@ -157,6 +156,25 @@ def register():
     data = packet_data_parser(received)
     debug("Received: bytes={}, Packet={}, id={}, rand={}, data={}".format(0,data[0],data[1],data[2],data[3]))
 
+    if data[0] == REG_ACK:
+        # Introducir datos pdu correctoss
+        config_elem=""
+        for element in configuration.elements:
+            config_elem += element+';'
+        dades = str(configuration.TCP)+','+config_elem[:-1]
+        print(dades)
+        pdu = struct.pack('1B 13s 9s 61s', REG_INFO, bytes(configuration.id, 'utf-8'), bytes(data[2], 'utf-8'), bytes(dades, 'utf-8'))
+        addr = (configuration.server, int(configuration.UDP))
+        sent = socketUDP.sendto(pdu, addr)
+        debug("Send: bytes={}, Packet={}, id={}, rand={}, data={}".format(sent, "REG_INFO", configuration.id, data[2], dades))
+
+def read_authorized():
+    authorized=[]
+    with open(authorized_opt) as file:
+        for line in file:
+            authorized += line.split()
+
+    return authorized
 
     #current_t = time.time()
     #while current_t < t:
