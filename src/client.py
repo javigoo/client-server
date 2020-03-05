@@ -7,7 +7,6 @@ SYNOPSIS
 
     client.py [-h,--help] [--version] [-d, --debug]
         [c, --configuration <file>, default=client.cfg]
-        [u, --authorized <file>, default=bbdd_dev.dat]
 
 
 DESCRIPTION
@@ -64,39 +63,51 @@ REG_NACK = 0x04
 INFO_NACK = 0x05
 REG_REJ =  0x06
 
-class pdu_udp():
-    """Protocol Data Unit (PDU) for User Data Protocol (UDP)"""
-    def __init__(self, pkg, id, rand, data):
-        self.pkg = pkg
-        self.id = id
-        self.rand = rand
-        self.data = data
+def debug(msg):
+    if debugger_opt: print(time.strftime("%H:%M:%S") + ": DEBUG -> " + str(msg))
+
+def msg(msg):
+    print(time.strftime("%H:%M:%S") + ": MSG   -> " + str(msg))
+
+def send_package_udp(pkg, id, rand, data):
+    package_content = struct.pack(udp_pdu, pkg, id, rand, data)
+    return socketUDP.sendto(package_content, udp_addr)
+
+def receive_package_udp():
+    package_content, addr = socketUDP.recvfrom(struct.calcsize(udp_pdu))
+    received = struct.unpack(udp_pdu, package_content)
+
+    return received_data(received)
+
+class received_data:
+    def __init__(self, received):
+        self.pkg = received[0]
+        self.id = received[1].decode()
+        self.rand = received[2].decode()
+        self.data = str(received[3]).strip("b'")[:5] # Hacer un parser de verdad
 
     def __str__(self):
-        return(' pkg = %s\n id = %s\n rand = %s\n data = %s' % (self.pkg, self.id, self.rand, self.data))
+        return('pkg = %s\nid = %s\nrand = %s\ndata = %s' % (self.pkg, self.id, self.rand, self.data))
 
 #################################### SETUP #####################################
 
 def setup():
-    global state, socketTCP, socketUDP, configuration, authorized
+    global state, socketTCP, socketUDP, configuration, udp_addr, udp_pdu
 
     state = DISCONNECTED
-    debug("State = DISCONNECTED")
+    msg("State = DISCONNECTED")
 
     socketUDP = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
     debug("UDP socket initialized")
+
     socketTCP = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
     debug("TCP socket initialized")
 
     configuration = read_configuration()
     debug("Configuration data file loaded - Device: {}".format(configuration.id))
-    #print(configuration)
-    authorized = read_authorized()
-    debug("Authorized devices file loaded")
-    #print(authorized)
 
-def debug(msg):
-    if debugger_opt: print(time.strftime("%H:%M:%S") + ": DEBUG -> " + str(msg))
+    udp_addr = configuration.server, int(configuration.UDP)
+    udp_pdu = "1B 13s 9s 61s"
 
 def read_configuration():
     with open(configuration_opt) as file:
@@ -119,17 +130,9 @@ class configuration_data:
     def __str__(self):
         return('Id = %s\nElements = %s\nTCP = %s\nServer = %s\nUDP = %s' % (self.id, self.elements, self.TCP, self.server, self.UDP))
 
-def read_authorized():
-    authorized=[]
-    with open(authorized_opt) as file:
-        for line in file:
-            authorized += line.split()
-
-    return authorized
-
 ################################### REGISTER ###################################
 
-def register():
+def register_and_periodic_communication():
     debug("Register on the server initialized")
     # Timers and thresholds
     t = 1
@@ -140,52 +143,37 @@ def register():
     q = 3
 
     state = NOT_REGISTERED
-    debug("State = NOT_REGISTERED")
+    msg("State = NOT_REGISTERED")
 
-    # Refactorizar esta basura pls
-    pdu = struct.pack('1B 13s 9s 61s', REG_REQ, bytes(configuration.id, 'utf-8'), b'00000000', b'')
-    addr = (configuration.server, int(configuration.UDP))
-    sent = socketUDP.sendto(pdu, addr)
-    debug("Send: bytes={}, Packet={}, id={}, rand={}, data={}".format(sent, "REG_REQ", configuration.id, "00000000", "" ))
+    sent = send_package_udp(REG_REQ, bytes(configuration.id, 'utf-8'), b'00000000', b'')
+    debug("Sent: bytes={}, pkg={}, id={}, rand={}, data={}".format(sent, "REG_REQ", configuration.id, "00000000", "" ))
 
     state = WAIT_ACK_REG
-    debug("State = WAIT_ACK_REG")
+    msg("State = WAIT_ACK_REG")
 
-    pdu, addr = socketUDP.recvfrom(struct.calcsize('1B 13s 9s 61s'))
-    received = struct.unpack('1B 13s 9s 61s', pdu)
-    data = packet_data_parser(received)
-    debug("Received: bytes={}, Packet={}, id={}, rand={}, data={}".format(0,data[0],data[1],data[2],data[3]))
+    received = receive_package_udp()
+    debug("Received: bytes={}, pkg={}, id={}, rand={}, data={}".format(sent, received.pkg, received.id, received.rand, received.data))
 
+    print(received.pkg == REG_ACK)
+    #debug("Received: bytes={}, pkg={}, id={}, rand={}, data={}".format(sent, data[0], data[1], data[2], data[3]))
+
+    """
     if data[0] == REG_ACK:
         # Introducir datos pdu correctoss
-        dades = configuration.TCP+','+configuration.elements
-        print(dades)
-        pdu = struct.pack('1B 13s 9s 61s', REG_INFO, bytes(configuration.id, 'utf-8'), bytes(data[2], 'utf-8'), bytes(dades, 'utf-8'))
-        addr = (configuration.server, int(configuration.UDP))
-        sent = socketUDP.sendto(pdu, addr)
-        debug("Send: bytes={}, Packet={}, id={}, rand={}, data={}".format(sent, "REG_INFO", configuration.id, data[2], dades))
-
-def read_authorized():
-    authorized=[]
-    with open(authorized_opt) as file:
-        for line in file:
-            authorized += line.split()
-
-    return authorized
+        dades = configuration.TCP+","+configuration.elements
+        package_content = struct.pack(udp_pdu, REG_INFO, bytes(configuration.id, 'utf-8'), bytes(data[2], 'utf-8'), bytes(dades, 'utf-8'))
+        sent = socketUDP.sendto(package_content, udp_addr)
+        debug("Sent: bytes={}, Packet={}, id={}, rand={}, data={}".format(sent, "REG_INFO", configuration.id, data[2], dades))
 
     #current_t = time.time()
     #while current_t < t:
     #    pass
+    """
 
     debug("Register on the server finished")
 
-# Hacer un parser de verdad
-def packet_data_parser(packet):
-    return packet[0], packet[1].decode(), packet[2].decode(), str(packet[3]).strip("b'")[:5]
-
 ########################### PERIODIC COMMUNICATION #############################
 
-def periodic_communication():
     debug("Periodic communication with the server initialized")
     pass
     debug("Periodic communication with the server finished")
@@ -208,8 +196,7 @@ def wait_connections():
 
 def main():
     setup()
-    register()
-    #periodic_communication()
+    register_and_periodic_communication()
     #send_data()
     #wait_connections()
 
@@ -222,13 +209,12 @@ if __name__ == '__main__':
         parser = optparse.OptionParser(formatter=optparse.TitledHelpFormatter(), usage=globals()["__doc__"],version=__version__)
         parser.add_option('-d', '--debug', action = 'store_true', default = False, help = 'Show information for each significant event')
         parser.add_option ('-c', '--configuration', action='store', type='string', default='client.cfg', help='Specify configuration data file, default client.cfg')
-        parser.add_option ('-u', '--authorized', action='store', type='string', default='bbdd_dev.dat', help='Specify authorized devices file, default bbdd_dev.dat')
+
         (options, args) = parser.parse_args()
         if len(args) > 0: parser.error ('Bad arguments, use --help for help')
 
         debugger_opt = options.debug
         configuration_opt = options.configuration
-        authorized_opt = options.authorized
 
         main()
 
