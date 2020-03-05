@@ -76,7 +76,6 @@ def send_package_udp(pkg, id, rand, data):
 def receive_package_udp():
     package_content, addr = socketUDP.recvfrom(struct.calcsize(udp_pdu))
     received = struct.unpack(udp_pdu, package_content)
-
     return received_data(received)
 
 class received_data:
@@ -128,7 +127,7 @@ class configuration_data:
         self.UDP = UDP
 
     def __str__(self):
-        return('Id = %s\nElements = %s\nTCP = %s\nServer = %s\nUDP = %s' % (self.id, self.elements, self.TCP, self.server, self.UDP))
+        return('Id = %s\PParams = %s\nLocal-TCP = %s\nServer = %s\nServer-UDP = %s' % (self.id, self.elements, self.TCP, self.server, self.UDP))
 
 ################################### REGISTER ###################################
 
@@ -141,33 +140,46 @@ def register_and_periodic_communication():
     o = 3
     p = 3
     q = 3
+    increment = 1
 
     state = NOT_REGISTERED
     msg("State = NOT_REGISTERED")
 
-    sent = send_package_udp(REG_REQ, bytes(configuration.id, 'utf-8'), b'00000000', b'')
-    debug("Sent: bytes={}, pkg={}, id={}, rand={}, data={}".format(sent, "REG_REQ", configuration.id, "00000000", "" ))
+    for package_attempt in range(1, n+1):
+        print("Pkg = ",package_attempt)
 
-    state = WAIT_ACK_REG
-    msg("State = WAIT_ACK_REG")
+        sent = send_package_udp(REG_REQ, bytes(configuration.id, 'utf-8'), b'00000000', b'')
+        #debug("Sent: bytes={}, pkg={}, id={}, rand={}, data={}".format(sent, "REG_REQ", configuration.id, "00000000", "" ))
+        sent=0
+        if sent == 0:
+            #msg("ERROR: REG_REQ could not be sent")
 
-    received = receive_package_udp()
-    debug("Received: bytes={}, pkg={}, id={}, rand={}, data={}".format(sent, received.pkg, received.id, received.rand, received.data))
+            if(package_attempt <= p):
+                print(t)
+                time.sleep(t)
+            else:
+                if t+increment < q*t:
+                    print("t+increment",t+increment)
+                    time.sleep(t+increment)
+                    increment += 1
+                else:
+                    print("q*t",q*t)
+                    time.sleep(q*t)
 
-    print(received.pkg == REG_ACK)
-    #debug("Received: bytes={}, pkg={}, id={}, rand={}, data={}".format(sent, data[0], data[1], data[2], data[3]))
+    print("Fin")
+################################################################################
 
     """
-    if data[0] == REG_ACK:
-        # Introducir datos pdu correctoss
-        dades = configuration.TCP+","+configuration.elements
-        package_content = struct.pack(udp_pdu, REG_INFO, bytes(configuration.id, 'utf-8'), bytes(data[2], 'utf-8'), bytes(dades, 'utf-8'))
-        sent = socketUDP.sendto(package_content, udp_addr)
-        debug("Sent: bytes={}, Packet={}, id={}, rand={}, data={}".format(sent, "REG_INFO", configuration.id, data[2], dades))
+        state = WAIT_ACK_REG
+        msg("State = WAIT_ACK_REG")
 
-    #current_t = time.time()
-    #while current_t < t:
-    #    pass
+        received = receive_package_udp()
+        debug("Received: bytes={}, pkg={}, id={}, rand={}, data={}".format(sent, received.pkg, received.id, received.rand, received.data))
+
+        #print(received.pkg == REG_ACK)
+
+
+        #sent = send_package_udp(REG_INFO, bytes(configuration.id, 'utf-8'), bytes(received.id, 'utf-8'), bytes(configuration.TCP+","+configuration.elements, 'utf-8'))
     """
 
     debug("Register on the server finished")
