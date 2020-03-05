@@ -101,7 +101,7 @@ def debug(msg):
 def read_configuration():
     with open(configuration_opt) as file:
         id = file.readline().strip('Id =\n')
-        elements = file.readline().strip('Params =\n').split(';')
+        elements = file.readline().strip('Params =\n')
         TCP = file.readline().strip('Local-TCP =\n')
         server = file.readline().strip('Server =\n')
         UDP = file.readline().strip('Server-UDP =\n')
@@ -158,10 +158,7 @@ def register():
 
     if data[0] == REG_ACK:
         # Introducir datos pdu correctoss
-        config_elem=""
-        for element in configuration.elements:
-            config_elem += element+';'
-        dades = str(configuration.TCP)+','+config_elem[:-1]
+        dades = configuration.TCP+','+configuration.elements
         print(dades)
         pdu = struct.pack('1B 13s 9s 61s', REG_INFO, bytes(configuration.id, 'utf-8'), bytes(data[2], 'utf-8'), bytes(dades, 'utf-8'))
         addr = (configuration.server, int(configuration.UDP))
