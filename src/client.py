@@ -155,7 +155,7 @@ def register_and_periodic_communication(register_attempts = 1):
         if state == NOT_REGISTERED:
             state = WAIT_ACK_REG
             msg("State = WAIT_ACK_REG")
-        sent=0
+
         if sent == 0:
             # Set delay between packages
             if(package_attempt <= p):
@@ -167,17 +167,34 @@ def register_and_periodic_communication(register_attempts = 1):
                 time.sleep(q*t)
             continue
         else:
-            break
+            # Receive package
+            received = receive_package_udp()
+            debug("Received: bytes={}, pkg={}, id={}, rand={}, data={}".format(sent, received.pkg, received.id, received.rand, received.data))
 
-        # Recibir paquete
-        """
-        received = receive_package_udp()
-        debug("Received: bytes={}, pkg={}, id={}, rand={}, data={}".format(sent, received.pkg, received.id, received.rand, received.data))
+            if(received.pkg == REG_ACK and state == WAIT_ACK_REG):
+                #server : id, rand, ip
+                sent = send_package_udp(REG_INFO, bytes(configuration.id, 'utf-8'), bytes(received.id, 'utf-8'), bytes(configuration.TCP+","+configuration.elements, 'utf-8'))
 
-        #print(received.pkg == REG_ACK)
+                state = WAIT_ACK_INFO
+                msg("State = WAIT_ACK_INFO")
 
-        #sent = send_package_udp(REG_INFO, bytes(configuration.id, 'utf-8'), bytes(received.id, 'utf-8'), bytes(configuration.TCP+","+configuration.elements, 'utf-8'))
-        """
+            elif(received.pkg == REG_NACK):
+                state = NOT_REGISTERED
+                msg("State = NOT_REGISTERED")
+
+            elif(received.pkg == REG_REJ):
+                state = NOT_REGISTERED
+                msg("State = NOT_REGISTERED")
+
+            elif(received.pkg == INFO_ACK and state == WAIT_ACK_INFO):
+                state = REGISTERED
+                msg("State = REGISTERED")
+
+            elif(received.pkg == INFO_NACK and state == WAIT_ACK_INFO):
+                state = NOT_REGISTERED
+                msg("State = NOT_REGISTERED")
+
+            return
 
     if register_attempts<r:
         time.sleep(u)
