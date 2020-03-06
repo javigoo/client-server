@@ -131,8 +131,7 @@ class configuration_data:
 
 ################################### REGISTER ###################################
 
-def register_and_periodic_communication():
-    debug("Register on the server initialized")
+def register_and_periodic_communication(register_attempts = 1):
     # Timers and thresholds
     t = 1
     u = 2
@@ -140,56 +139,60 @@ def register_and_periodic_communication():
     o = 3
     p = 3
     q = 3
-    increment = 1
+
+    i = 1 # Increment variable for time
+    r = 2 # Max. register attempts
 
     state = NOT_REGISTERED
     msg("State = NOT_REGISTERED")
+    debug("Register attempt = {}".format(register_attempts))
 
     for package_attempt in range(1, n+1):
-        print("Pkg = ",package_attempt)
 
         sent = send_package_udp(REG_REQ, bytes(configuration.id, 'utf-8'), b'00000000', b'')
-        #debug("Sent: bytes={}, pkg={}, id={}, rand={}, data={}".format(sent, "REG_REQ", configuration.id, "00000000", "" ))
+        debug("Sent: bytes={}, pkg={}, id={}, rand={}, data={}".format(sent, "REG_REQ", configuration.id, "00000000", "" ))
+
+        if state == NOT_REGISTERED:
+            state = WAIT_ACK_REG
+            msg("State = WAIT_ACK_REG")
         sent=0
         if sent == 0:
-            #msg("ERROR: REG_REQ could not be sent")
-
+            # Set delay between packages
             if(package_attempt <= p):
-                print(t)
                 time.sleep(t)
+            elif t+i < q*t:
+                    time.sleep(t+i)
+                    i += 1
             else:
-                if t+increment < q*t:
-                    print("t+increment",t+increment)
-                    time.sleep(t+increment)
-                    increment += 1
-                else:
-                    print("q*t",q*t)
-                    time.sleep(q*t)
+                time.sleep(q*t)
+            continue
+        else:
+            break
 
-    print("Fin")
-################################################################################
-
-    """
-        state = WAIT_ACK_REG
-        msg("State = WAIT_ACK_REG")
-
+        # Recibir paquete
+        """
         received = receive_package_udp()
         debug("Received: bytes={}, pkg={}, id={}, rand={}, data={}".format(sent, received.pkg, received.id, received.rand, received.data))
 
         #print(received.pkg == REG_ACK)
 
-
         #sent = send_package_udp(REG_INFO, bytes(configuration.id, 'utf-8'), bytes(received.id, 'utf-8'), bytes(configuration.TCP+","+configuration.elements, 'utf-8'))
-    """
+        """
 
-    debug("Register on the server finished")
+    if register_attempts<r:
+        time.sleep(u)
+        register_attempts += 1
+        register_and_periodic_communication(register_attempts)
+    else:
+        msg("Number of subscription processes exceeded ({})".format(register_attempts))
+
 
 ########################### PERIODIC COMMUNICATION #############################
-
+"""
     debug("Periodic communication with the server initialized")
     pass
     debug("Periodic communication with the server finished")
-
+"""
 ################################# SEND DATA ####################################
 
 def send_data():
@@ -208,7 +211,9 @@ def wait_connections():
 
 def main():
     setup()
+    debug("Register on the server initialized")
     register_and_periodic_communication()
+    debug("Register on the server finished")
     #send_data()
     #wait_connections()
 
