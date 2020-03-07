@@ -111,7 +111,10 @@ class configuration_data:
 
 ################################### REGISTER ###################################
 
-def register_and_periodic_communication(register_attempts = 1):
+def register(register_attempts = 1):
+    if register_attempts == 1:
+        debug("Register on the server initialized")
+
     # Timers and thresholds
     t = 1
     u = 2
@@ -136,18 +139,8 @@ def register_and_periodic_communication(register_attempts = 1):
             state = WAIT_ACK_REG
             msg("State = WAIT_ACK_REG")
 
-        # Set delay between packages
-        if sent == 0:
-            if(package_attempt <= p):
-                time.sleep(t)
-            elif i*t < q*t:
-                time.sleep(i*t)
-                i += 1
-            else:
-                time.sleep(q*t)
-            continue
-        else:
-            # Receive package
+        # Receive package
+        if sent != 0:
             received = receive_package_udp()
             debug("Received: bytes={}, pkg={}, id={}, rand={}, data={}".format(sent, received.pkg, received.id, received.rand, received.data))
 
@@ -155,7 +148,7 @@ def register_and_periodic_communication(register_attempts = 1):
             server_rand = received.rand
             server_data = received.data
 
-            if(received.pkg == REG_ACK and state == WAIT_ACK_REG):
+            if(REG_ACK == received.pkg and WAIT_ACK_REG == state):
 
                 data = configuration.TCP+","+configuration.elements
                 addr = configuration.server, int(server_data)
@@ -172,42 +165,57 @@ def register_and_periodic_communication(register_attempts = 1):
                     received = struct.unpack(udp_pdu, package_content)
                     received = received_data(received)
                     debug("Received: bytes={}, pkg={}, id={}, rand={}, data={}".format(sent, received.pkg, received.id, received.rand, received.data))
-
-                    if received.pkg == INFO_ACK:
-                        print("INFO_ACK recibido")
-                        return
-
                 else:
                     state = NOT_REGISTERED
                     msg("State = NOT_REGISTERED")
                     # Start new register attempt
 
-            elif(received.pkg == REG_NACK):
+            if(REG_NACK == received.pkg):
                 state = NOT_REGISTERED
                 msg("State = NOT_REGISTERED")
+                #go to send REG_REQ
 
-            elif(received.pkg == REG_REJ):
+            if(REG_REJ == received.pkg):
                 state = NOT_REGISTERED
                 msg("State = NOT_REGISTERED")
+                break
 
-            elif(received.pkg == INFO_ACK and state == WAIT_ACK_INFO):
-                state = REGISTERED
-                msg("State = REGISTERED")
+            if(INFO_ACK == received.pkg and WAIT_ACK_INFO == state):
+                # Checking if the server data is correct
+                if(server_id == received.id and server_rand == received.rand):
+                    state = REGISTERED
+                    msg("State = REGISTERED")
+                    port_tcp = received.data # Puerto TCP del servidor por el que recibira datos del cliente
+                    return
 
-            elif(received.pkg == INFO_NACK and state == WAIT_ACK_INFO):
-                state = NOT_REGISTERED
-                msg("State = NOT_REGISTERED")
+            if(INFO_NACK == received.pkg and WAIT_ACK_INFO == state):
+                # Checking if the server data is correct
+                if(server_id == received.id and server_rand == received.rand):
+                    state = NOT_REGISTERED
+                    msg("State = NOT_REGISTERED")
+                    msg(received.data)
+                    #go to send REG_REQ
 
+            state = NOT_REGISTERED
+            msg("State = NOT_REGISTERED")
+            return
+
+        # Set delay between packages
+        else:
+            if(package_attempt <= p):
+                time.sleep(t)
+            elif i*t < q*t:
+                time.sleep(i*t)
+                i += 1
             else:
-                state = NOT_REGISTERED
-                msg("State = NOT_REGISTERED")
-                return
+                time.sleep(q*t)
+            continue
 
     # Control of number of subscription processes
     if register_attempts<r:
         time.sleep(u)
         register_attempts += 1
-        register_and_periodic_communication(register_attempts)
+        register(register_attempts)
     else:
         msg("Number of subscription processes exceeded ({})".format(register_attempts))
 
@@ -232,32 +240,29 @@ class received_data:
         return('pkg = %s\nid = %s\nrand = %s\ndata = %s' % (self.pkg, self.id, self.rand, self.data))
 
 ########################### PERIODIC COMMUNICATION #############################
-"""
+
+def periodic_communication():
     debug("Periodic communication with the server initialized")
     pass
-    debug("Periodic communication with the server finished")
-"""
+
 ################################# SEND DATA ####################################
 
 def send_data():
     debug("Send data to the server initialized")
     pass
-    debug("Send data to the server finished")
 
 ############################## WAIT CONNECTIONS ################################
 
 def wait_connections():
     debug("Wait for server tcp connections initialized")
     pass
-    debug("Wait for server tcp connections finished")
 
 #################################### MAIN ######################################
 
 def main():
     setup()
-    debug("Register on the server initialized")
-    register_and_periodic_communication()
-    debug("Register on the server finished")
+    register()
+    periodic_communication()
     #send_data()
     #wait_connections()
 
