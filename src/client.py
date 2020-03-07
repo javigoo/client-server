@@ -69,26 +69,6 @@ def debug(msg):
 def msg(msg):
     print(time.strftime("%H:%M:%S") + ": MSG   -> " + str(msg))
 
-def send_package_udp(pkg, id, rand, data, addr):
-    package_content = struct.pack(udp_pdu, pkg, bytes(id, 'utf-8'), bytes(rand, 'utf-8'), bytes(data, 'utf-8'))
-    return socketUDP.sendto(package_content, addr)
-
-def receive_package_udp():
-    package_content, addr = socketUDP.recvfrom(struct.calcsize(udp_pdu))
-    received = struct.unpack(udp_pdu, package_content)
-    return received_data(received)
-
-class received_data:
-    def __init__(self, received):
-        self.pkg = received[0]
-        self.id = received[1].decode()
-        self.rand = received[2].decode()
-        self.data = str(received[3]).strip("b'")[:5] # Hacer un parser de verdad
-        # Añadir addr devuelta
-
-    def __str__(self):
-        return('pkg = %s\nid = %s\nrand = %s\ndata = %s' % (self.pkg, self.id, self.rand, self.data))
-
 #################################### SETUP #####################################
 
 def setup():
@@ -156,8 +136,8 @@ def register_and_periodic_communication(register_attempts = 1):
             state = WAIT_ACK_REG
             msg("State = WAIT_ACK_REG")
 
+        # Set delay between packages
         if sent == 0:
-            # Set delay between packages
             if(package_attempt <= p):
                 time.sleep(t)
             elif i*t < q*t:
@@ -185,6 +165,23 @@ def register_and_periodic_communication(register_attempts = 1):
                 state = WAIT_ACK_INFO
                 msg("State = WAIT_ACK_INFO")
 
+                # Wait for confirmation of INFO_ACK
+                i, o, e = select.select([socketUDP], [], [], 2*t)
+                if i != []:
+                    package_content, addr = i[0].recvfrom(struct.calcsize(udp_pdu))
+                    received = struct.unpack(udp_pdu, package_content)
+                    received = received_data(received)
+                    debug("Received: bytes={}, pkg={}, id={}, rand={}, data={}".format(sent, received.pkg, received.id, received.rand, received.data))
+
+                    if received.pkg == INFO_ACK:
+                        print("INFO_ACK recibido")
+                        return
+
+                else:
+                    state = NOT_REGISTERED
+                    msg("State = NOT_REGISTERED")
+                    # Start new register attempt
+
             elif(received.pkg == REG_NACK):
                 state = NOT_REGISTERED
                 msg("State = NOT_REGISTERED")
@@ -201,8 +198,12 @@ def register_and_periodic_communication(register_attempts = 1):
                 state = NOT_REGISTERED
                 msg("State = NOT_REGISTERED")
 
-            return
+            else:
+                state = NOT_REGISTERED
+                msg("State = NOT_REGISTERED")
+                return
 
+    # Control of number of subscription processes
     if register_attempts<r:
         time.sleep(u)
         register_attempts += 1
@@ -210,6 +211,25 @@ def register_and_periodic_communication(register_attempts = 1):
     else:
         msg("Number of subscription processes exceeded ({})".format(register_attempts))
 
+def send_package_udp(pkg, id, rand, data, addr):
+    package_content = struct.pack(udp_pdu, pkg, bytes(id, 'utf-8'), bytes(rand, 'utf-8'), bytes(data, 'utf-8'))
+    return socketUDP.sendto(package_content, addr)
+
+def receive_package_udp():
+    package_content, addr = socketUDP.recvfrom(struct.calcsize(udp_pdu))
+    received = struct.unpack(udp_pdu, package_content)
+    return received_data(received)
+
+class received_data:
+    def __init__(self, received):
+        self.pkg = received[0]
+        self.id = received[1].decode()
+        self.rand = received[2].decode()
+        self.data = str(received[3]).strip("b'")[:5] # Hacer un parser de verdad
+        # Añadir addr devuelta
+
+    def __str__(self):
+        return('pkg = %s\nid = %s\nrand = %s\ndata = %s' % (self.pkg, self.id, self.rand, self.data))
 
 ########################### PERIODIC COMMUNICATION #############################
 """
