@@ -69,9 +69,9 @@ def debug(msg):
 def msg(msg):
     print(time.strftime("%H:%M:%S") + ": MSG   -> " + str(msg))
 
-def send_package_udp(pkg, id, rand, data):
-    package_content = struct.pack(udp_pdu, pkg, id, rand, data)
-    return socketUDP.sendto(package_content, udp_addr)
+def send_package_udp(pkg, id, rand, data, addr):
+    package_content = struct.pack(udp_pdu, pkg, bytes(id, 'utf-8'), bytes(rand, 'utf-8'), bytes(data, 'utf-8'))
+    return socketUDP.sendto(package_content, addr)
 
 def receive_package_udp():
     package_content, addr = socketUDP.recvfrom(struct.calcsize(udp_pdu))
@@ -84,6 +84,7 @@ class received_data:
         self.id = received[1].decode()
         self.rand = received[2].decode()
         self.data = str(received[3]).strip("b'")[:5] # Hacer un parser de verdad
+        # Añadir addr devuelta
 
     def __str__(self):
         return('pkg = %s\nid = %s\nrand = %s\ndata = %s' % (self.pkg, self.id, self.rand, self.data))
@@ -91,7 +92,7 @@ class received_data:
 #################################### SETUP #####################################
 
 def setup():
-    global state, socketTCP, socketUDP, configuration, udp_addr, udp_pdu
+    global state, socketTCP, socketUDP, configuration, udp_pdu
 
     state = DISCONNECTED
     msg("State = DISCONNECTED")
@@ -105,7 +106,6 @@ def setup():
     configuration = read_configuration()
     debug("Configuration data file loaded - Device: {}".format(configuration.id))
 
-    udp_addr = configuration.server, int(configuration.UDP)
     udp_pdu = "1B 13s 9s 61s"
 
 def read_configuration():
@@ -148,8 +148,8 @@ def register_and_periodic_communication(register_attempts = 1):
     debug("Register attempt = {}".format(register_attempts))
 
     for package_attempt in range(1, n+1):
-
-        sent = send_package_udp(REG_REQ, bytes(configuration.id, 'utf-8'), b'00000000', b'')
+        udp_addr = configuration.server, int(configuration.UDP)
+        sent = send_package_udp(REG_REQ, configuration.id, "00000000", "", udp_addr)
         debug("Sent: bytes={}, pkg={}, id={}, rand={}, data={}".format(sent, "REG_REQ", configuration.id, "00000000", "" ))
 
         if state == NOT_REGISTERED:
@@ -160,9 +160,9 @@ def register_and_periodic_communication(register_attempts = 1):
             # Set delay between packages
             if(package_attempt <= p):
                 time.sleep(t)
-            elif t+i < q*t:
-                    time.sleep(t+i)
-                    i += 1
+            elif i*t < q*t:
+                time.sleep(i*t)
+                i += 1
             else:
                 time.sleep(q*t)
             continue
@@ -171,9 +171,16 @@ def register_and_periodic_communication(register_attempts = 1):
             received = receive_package_udp()
             debug("Received: bytes={}, pkg={}, id={}, rand={}, data={}".format(sent, received.pkg, received.id, received.rand, received.data))
 
+            server_id = received.id
+            server_rand = received.rand
+            server_data = received.data
+
             if(received.pkg == REG_ACK and state == WAIT_ACK_REG):
-                #server : id, rand, ip
-                sent = send_package_udp(REG_INFO, bytes(configuration.id, 'utf-8'), bytes(received.id, 'utf-8'), bytes(configuration.TCP+","+configuration.elements, 'utf-8'))
+
+                data = configuration.TCP+","+configuration.elements
+                addr = configuration.server, int(server_data)
+                sent = send_package_udp(REG_INFO, configuration.id, received.rand, data, addr)
+                debug("Sent: bytes={}, pkg={}, id={}, rand={}, data={}".format(sent, "REG_INFO", configuration.id, received.rand, data))
 
                 state = WAIT_ACK_INFO
                 msg("State = WAIT_ACK_INFO")
