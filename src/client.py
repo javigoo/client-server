@@ -63,6 +63,10 @@ REG_NACK = 0x04
 INFO_NACK = 0x05
 REG_REJ =  0x06
 
+# Periodic communication packages
+ALIVE = 0x10
+ALIVE_REJ = 0x11
+
 def debug(msg):
     if debugger_opt: print(time.strftime("%H:%M:%S") + ": DEBUG -> " + str(msg))
 
@@ -72,6 +76,7 @@ def msg(msg):
 #################################### SETUP #####################################
 
 def setup():
+
     global state, socketTCP, socketUDP, configuration, udp_pdu
 
     state = DISCONNECTED
@@ -146,12 +151,12 @@ def register(register_attempts = 1):
 
             server_id = received.id
             server_rand = received.rand
-            server_data = received.data
+            server_port = received.data
 
             if(REG_ACK == received.pkg and WAIT_ACK_REG == state):
 
                 data = configuration.TCP+","+configuration.elements
-                addr = configuration.server, int(server_data)
+                addr = configuration.server, int(server_port)
                 sent = send_package_udp(REG_INFO, configuration.id, received.rand, data, addr)
                 debug("Sent: bytes={}, pkg={}, id={}, rand={}, data={}".format(sent, "REG_INFO", configuration.id, received.rand, data))
 
@@ -174,6 +179,8 @@ def register(register_attempts = 1):
                 state = NOT_REGISTERED
                 msg("State = NOT_REGISTERED")
                 #go to send REG_REQ
+                msg("REG_NACK")
+                sys.exit()
 
             if(REG_REJ == received.pkg):
                 state = NOT_REGISTERED
@@ -186,7 +193,7 @@ def register(register_attempts = 1):
                     state = REGISTERED
                     msg("State = REGISTERED")
                     port_tcp = received.data # Puerto TCP del servidor por el que recibira datos del cliente
-                    return
+                    periodic_communication(state, (server_id, server_rand, server_port)) # Crear clase para server info
 
             if(INFO_NACK == received.pkg and WAIT_ACK_INFO == state):
                 # Checking if the server data is correct
@@ -195,6 +202,8 @@ def register(register_attempts = 1):
                     msg("State = NOT_REGISTERED")
                     msg(received.data)
                     #go to send REG_REQ
+                    msg("INFO_NACK")
+                    sys.exit()
 
             state = NOT_REGISTERED
             msg("State = NOT_REGISTERED")
@@ -218,6 +227,7 @@ def register(register_attempts = 1):
         register(register_attempts)
     else:
         msg("Number of subscription processes exceeded ({})".format(register_attempts))
+        sys.exit()
 
 def send_package_udp(pkg, id, rand, data, addr):
     package_content = struct.pack(udp_pdu, pkg, bytes(id, 'utf-8'), bytes(rand, 'utf-8'), bytes(data, 'utf-8'))
@@ -241,9 +251,46 @@ class received_data:
 
 ########################### PERIODIC COMMUNICATION #############################
 
-def periodic_communication():
+def periodic_communication(state = DISCONNECTED, server_info = None):
     debug("Periodic communication with the server initialized")
-    pass
+
+    # Timers and thresholds
+    v = 2
+    r = 2
+    s = 3
+
+    if state == REGISTERED:
+        while True:
+            # Send alive
+            udp_addr = configuration.server, int(configuration.UDP)
+            sent = send_package_udp(ALIVE, configuration.id, server_info[1], "", udp_addr)
+            debug("Sent: bytes={}, pkg={}, id={}, rand={}, data={}".format(sent, "ALIVE", configuration.id, server_info[1], ""))
+
+            # Wait for confirmation of INFO_ACK
+            i, o, e = select.select([socketUDP], [], [], r*v)
+            if i != []:
+                package_content, addr = i[0].recvfrom(struct.calcsize(udp_pdu))
+                received = struct.unpack(udp_pdu, package_content)
+                received = received_data(received)
+                debug("Received: bytes={}, pkg={}, id={}, rand={}, data={}".format(sent, received.pkg, received.id, received.rand, received.data))
+
+                if(server_info[0] == received.id and server_info[1] == received.rand and configuration.id[:5] == received.data ): # Hacer un parser de verdad
+                    if state != SEND_ALIVE:
+                        state = SEND_ALIVE
+                        msg("State = SEND_ALIVE")
+
+                    # Abrir puerto TCP para recepcion de conexiones del servidor
+                    # Leer comandos de terminal
+            else:
+                state = NOT_REGISTERED
+                msg("State = NOT_REGISTERED")
+                return
+                #return register() # nou proces de suscripcio
+
+            time.sleep(v)
+    else:
+        msg("Incorrect client state")
+        sys.exit()
 
 ################################# SEND DATA ####################################
 
@@ -262,7 +309,6 @@ def wait_connections():
 def main():
     setup()
     register()
-    periodic_communication()
     #send_data()
     #wait_connections()
 
