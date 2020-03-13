@@ -259,33 +259,48 @@ def periodic_communication(state = DISCONNECTED, server_info = None):
     r = 2
     s = 3
 
+    a = 0 # Number of packets ALIVE that the client has not received
+
     if state == REGISTERED:
         while True:
-            # Send alive
+
             udp_addr = configuration.server, int(configuration.UDP)
             sent = send_package_udp(ALIVE, configuration.id, server_info[1], "", udp_addr)
             debug("Sent: bytes={}, pkg={}, id={}, rand={}, data={}".format(sent, "ALIVE", configuration.id, server_info[1], ""))
 
-            # Wait for confirmation of INFO_ACK
+            # Wait for confirmation of ALIVE
             i, o, e = select.select([socketUDP], [], [], r*v)
+
             if i != []:
                 package_content, addr = i[0].recvfrom(struct.calcsize(udp_pdu))
                 received = struct.unpack(udp_pdu, package_content)
                 received = received_data(received)
                 debug("Received: bytes={}, pkg={}, id={}, rand={}, data={}".format(sent, received.pkg, received.id, received.rand, received.data))
 
-                if(server_info[0] == received.id and server_info[1] == received.rand and configuration.id[:5] == received.data ): # Hacer un parser de verdad
-                    if state != SEND_ALIVE:
-                        state = SEND_ALIVE
-                        msg("State = SEND_ALIVE")
+                if ALIVE == received.pkg:
+                    if(server_info[0] == received.id and server_info[1] == received.rand and configuration.id[:5] == received.data ): # Hacer un parser de verdad
+                        if state != SEND_ALIVE:
+                            state = SEND_ALIVE
+                            msg("State = SEND_ALIVE")
 
-                    # Abrir puerto TCP para recepcion de conexiones del servidor
-                    # Leer comandos de terminal
+                        # Abrir puerto TCP para recepcion de conexiones del servidor
+                        # Leer comandos de terminal
+
+                if ALIVE_REJ == received.pkg:
+                    state = NOT_REGISTERED
+                    msg("State = NOT_REGISTERED")
+                    return # Iniciar nou proces de suscripcio
+
             else:
-                state = NOT_REGISTERED
-                msg("State = NOT_REGISTERED")
-                return
-                #return register() # nou proces de suscripcio
+                if(state == SEND_ALIVE and a < s):
+                    msg("Alive packet {} not received".format(a+1))
+                    a += 1
+
+                else:
+                    state = NOT_REGISTERED
+                    msg("State = NOT_REGISTERED")
+                    return
+                    #return register() # nou proces de suscripcio
 
             time.sleep(v)
     else:
@@ -309,6 +324,7 @@ def wait_connections():
 def main():
     setup()
     register()
+    #periodic_communication()
     #send_data()
     #wait_connections()
 
