@@ -161,13 +161,14 @@ def register(register_attempts = 0):
                 package_content, addr = i[0].recvfrom(struct.calcsize(udp_pdu))
                 received = struct.unpack(udp_pdu, package_content)
                 received = received_data(received)
-                debug("Received: bytes={}, pkg={}, id={}, rand={}, data={}".format(sent, received.pkg, received.id, received.rand, received.data))
 
                 server_id = received.id
                 server_rand = received.rand
                 server_port = received.data
 
                 if(REG_ACK == received.pkg and WAIT_ACK_REG == state):
+                    debug("Received: bytes={}, pkg={}, id={}, rand={}, data={}".format(sent, "REG_ACK", received.id, received.rand, received.data))
+
 
                     data = configuration.TCP+","+configuration.elements
                     addr = configuration.server, int(server_port)
@@ -190,6 +191,8 @@ def register(register_attempts = 0):
                         # Start new register attempt
 
                 if(REG_NACK == received.pkg):
+                    debug("Received: bytes={}, pkg={}, id={}, rand={}, data={}".format(sent, "REG_NACK", received.id, received.rand, received.data))
+
                     state = NOT_REGISTERED
                     msg("State = NOT_REGISTERED")
                     #go to send REG_REQ
@@ -197,11 +200,15 @@ def register(register_attempts = 0):
                     sys.exit()
 
                 if(REG_REJ == received.pkg):
+                    debug("Received: bytes={}, pkg={}, id={}, rand={}, data={}".format(sent, "REG_REJ", received.id, received.rand, received.data))
+
                     state = NOT_REGISTERED
                     msg("State = NOT_REGISTERED")
                     break
 
                 if(INFO_ACK == received.pkg and WAIT_ACK_INFO == state):
+                    debug("Received: bytes={}, pkg={}, id={}, rand={}, data={}".format(sent, "INFO_ACK", received.id, received.rand, received.data))
+
                     # Checking if the server data is correct
                     if(server_id == received.id and server_rand == received.rand):
                         state = REGISTERED
@@ -210,6 +217,8 @@ def register(register_attempts = 0):
                         periodic_communication(state, (server_id, server_rand, server_port)) # Crear clase para server info
 
                 if(INFO_NACK == received.pkg and WAIT_ACK_INFO == state):
+                    debug("Received: bytes={}, pkg={}, id={}, rand={}, data={}".format(sent, "INFO_NACK", received.id, received.rand, received.data))
+
                     # Checking if the server data is correct
                     if(server_id == received.id and server_rand == received.rand):
                         state = NOT_REGISTERED
