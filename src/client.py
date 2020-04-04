@@ -120,6 +120,7 @@ class configuration_data:
 def register():
     debug("Register on the server initialized")
 
+    global server_identification_data
     # Timers and thresholds
     t = 1
     u = 2
@@ -165,17 +166,15 @@ def register():
                     received = received_data(received_packet)
 
                     # Server identification data is saved
-                    server_id = received.id
-                    server_rand = received.rand
-                    server_port = received.data
+                    server_identification_data = server_data(received.id, received.rand, received.data)
 
                     if(REG_ACK == received.pkg and WAIT_ACK_REG == state):
                         debug("Received: bytes={}, pkg={}, id={}, rand={}, data={}".format(sent, "REG_ACK", received.id, received.rand, received.data))
 
                         data = configuration.TCP+","+configuration.elements
-                        addr = configuration.server, int(server_port)
-                        sent = send_package_udp(REG_INFO, configuration.id, server_rand, data, addr)
-                        debug("Sent: bytes={}, pkg={}, id={}, rand={}, data={}".format(sent, "REG_INFO", configuration.id, server_rand, data))
+                        addr = configuration.server, int(received.data)
+                        sent = send_package_udp(REG_INFO, configuration.id, received.rand, data, addr)
+                        debug("Sent: bytes={}, pkg={}, id={}, rand={}, data={}".format(sent, "REG_INFO", configuration.id, received.rand, data))
 
                         state = WAIT_ACK_INFO
                         msg("State = WAIT_ACK_INFO")
@@ -206,7 +205,7 @@ def register():
                         debug("Received: bytes={}, pkg={}, id={}, rand={}, data={}".format(sent, "INFO_ACK", received.id, received.rand, received.data))
 
                         # Checking if the server data is correct
-                        if(server_id == received.id and server_rand == received.rand):
+                        if(server_identification_data.id == received.id and server_identification_data.rand == received.rand):
 
                             state = REGISTERED
                             msg("State = REGISTERED")
@@ -245,25 +244,36 @@ def send_package_udp(pkg, id, rand, data, addr):
     package_content = struct.pack(udp_pdu, pkg, bytes(id, 'utf-8'), bytes(rand, 'utf-8'), bytes(data, 'utf-8'))
     return socketUDP.sendto(package_content, addr)
 
-def receive_package_udp():
-    package_content, addr = socketUDP.recvfrom(struct.calcsize(udp_pdu))
-    received = struct.unpack(udp_pdu, package_content)
-    return received_data(received)
-
 class received_data:
     def __init__(self, received):
         self.pkg = received[0]
         self.id = received[1].decode()
         self.rand = received[2].decode()
-        self.data = str(received[3]).strip("b'")[:5] # Hacer un parser de verdad
+        self.data = ""
         # Añadir addr devuelta
+
+        # Parser byte to ascii (Mejorar)
+        for byte in received[3]:
+            if byte == 0:
+                break
+            self.data = self.data + chr(byte)
 
     def __str__(self):
         return('pkg = %s\nid = %s\nrand = %s\ndata = %s' % (self.pkg, self.id, self.rand, self.data))
 
+class server_data:
+    def __init__(self, id, random, port):
+        self.id = id
+        self.rand = random
+        self.port = port
+
+    def __str__(self):
+        return('Id = %s\nRandom = %s\nPort= %s' % (self.id, self.rand, self.port))
+
+
 ########################### PERIODIC COMMUNICATION #############################
 
-def periodic_communication(state = DISCONNECTED, server_info = None):
+def periodic_communication():
     debug("Periodic communication with the server initialized")
 
     # Timers and thresholds
@@ -273,51 +283,50 @@ def periodic_communication(state = DISCONNECTED, server_info = None):
 
     a = 0 # Number of packets ALIVE that the client has not received
 
-    if state == REGISTERED:
-        while True:
+    while True:
 
-            udp_addr = configuration.server, int(configuration.UDP)
-            sent = send_package_udp(ALIVE, configuration.id, server_info[1], "", udp_addr)
-            debug("Sent: bytes={}, pkg={}, id={}, rand={}, data={}".format(sent, "ALIVE", configuration.id, server_info[1], ""))
+        udp_addr = configuration.server, int(configuration.UDP)
+        sent = send_package_udp(ALIVE, configuration.id, server_identification_data.rand, "", udp_addr)
+        debug("Sent: bytes={}, pkg={}, id={}, rand={}, data={}".format(sent, "ALIVE", configuration.id, server_identification_data.rand, ""))
 
-            # Wait for confirmation of ALIVE
-            i, o, e = select.select([socketUDP], [], [], r*v)
+        # Wait for confirmation of ALIVE
+        i, o, e = select.select([socketUDP], [], [], r*v)
 
-            if i != []:
-                package_content, addr = i[0].recvfrom(struct.calcsize(udp_pdu))
-                received_packet = struct.unpack(udp_pdu, package_content)
-                received = received_data(received_packet)
-                debug("Received: bytes={}, pkg={}, id={}, rand={}, data={}".format(sent, received.pkg, received.id, received.rand, received.data))
+        if i != []:
+            package_content, addr = i[0].recvfrom(struct.calcsize(udp_pdu))
+            received_packet = struct.unpack(udp_pdu, package_content)
+            received = received_data(received_packet)
 
-                if ALIVE == received.pkg:
-                    if(server_info[0] == received.id and server_info[1] == received.rand and configuration.id[:5] == received.data ): # Hacer un parser de verdad
-                        if state != SEND_ALIVE:
-                            state = SEND_ALIVE
-                            msg("State = SEND_ALIVE")
+            if ALIVE == received.pkg:
+                debug("Received: bytes={}, pkg={}, id={}, rand={}, data={}".format(sent, "ALIVE", received.id, received.rand, received.data))
 
-                        # Abrir puerto TCP para recepcion de conexiones del servidor
-                        # Leer comandos de terminal
+                if(server_identification_data.id == received.id and server_identification_data.rand == received.rand and configuration.id[:5] == received.data ): # Hacer un parser de verdad
+                    if state != SEND_ALIVE:
+                        state = SEND_ALIVE
+                        msg("State = SEND_ALIVE")
 
-                if ALIVE_REJ == received.pkg:
-                    state = NOT_REGISTERED
-                    msg("State = NOT_REGISTERED")
-                    return # Iniciar nou proces de suscripcio
+                    # Abrir puerto TCP para recepcion de conexiones del servidor
+                    # Leer comandos de terminal
+
+            if ALIVE_REJ == received.pkg:
+                debug("Received: bytes={}, pkg={}, id={}, rand={}, data={}".format(sent, "ALIVE_REJ", received.id, received.rand, received.data))
+
+                state = NOT_REGISTERED
+                msg("State = NOT_REGISTERED")
+                return # Iniciar nou proces de suscripcio
+
+        else:
+            if(state == SEND_ALIVE and a < s):
+                msg("Alive packet {} not received".format(a+1))
+                a += 1
 
             else:
-                if(state == SEND_ALIVE and a < s):
-                    msg("Alive packet {} not received".format(a+1))
-                    a += 1
+                state = NOT_REGISTERED
+                msg("State = NOT_REGISTERED")
+                return
+                #return register() # nou proces de suscripcio
 
-                else:
-                    state = NOT_REGISTERED
-                    msg("State = NOT_REGISTERED")
-                    return
-                    #return register() # nou proces de suscripcio
-
-            time.sleep(v)
-    else:
-        msg("Incorrect client state")
-        sys.exit()
+        time.sleep(v)
 
 ################################# SEND DATA ####################################
 
@@ -337,7 +346,7 @@ def main():
 
     setup()
     register()
-    #periodic_communication()
+    periodic_communication()
     #send_data()
     #wait_connections()
 
