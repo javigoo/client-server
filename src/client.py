@@ -142,7 +142,7 @@ def register():
             # Sending of the first registration request
             udp_addr = configuration.server, int(configuration.UDP)
             sent = send_package_udp(REG_REQ, configuration.id, "00000000", "", udp_addr)
-            debug("Sent: bytes={}, pkg={}, id={}, rand={}, data={}".format(sent, "REG_REQ", configuration.id, "00000000", "" ))
+            debug("Sent: bytes={}, pkg={}, id={}, rand={}, data={}".format(sent, "REG_REQ", configuration.id, "00000000", ""))
 
             if state == NOT_REGISTERED:
                 state = WAIT_ACK_REG
@@ -161,9 +161,10 @@ def register():
                 i, o, e = select.select([socketUDP], [], [], timeout)
                 if i != []:
                     package_content, addr = i[0].recvfrom(struct.calcsize(udp_pdu))
-                    received_data = struct.unpack(udp_pdu, package_content)
-                    received = received_data(received_data)
+                    received_packet = struct.unpack(udp_pdu, package_content)
+                    received = received_data(received_packet)
 
+                    # Server identification data is saved
                     server_id = received.id
                     server_rand = received.rand
                     server_port = received.data
@@ -171,11 +172,10 @@ def register():
                     if(REG_ACK == received.pkg and WAIT_ACK_REG == state):
                         debug("Received: bytes={}, pkg={}, id={}, rand={}, data={}".format(sent, "REG_ACK", received.id, received.rand, received.data))
 
-
                         data = configuration.TCP+","+configuration.elements
                         addr = configuration.server, int(server_port)
-                        sent = send_package_udp(REG_INFO, configuration.id, received.rand, data, addr)
-                        debug("Sent: bytes={}, pkg={}, id={}, rand={}, data={}".format(sent, "REG_INFO", configuration.id, received.rand, data))
+                        sent = send_package_udp(REG_INFO, configuration.id, server_rand, data, addr)
+                        debug("Sent: bytes={}, pkg={}, id={}, rand={}, data={}".format(sent, "REG_INFO", configuration.id, server_rand, data))
 
                         state = WAIT_ACK_INFO
                         msg("State = WAIT_ACK_INFO")
@@ -184,55 +184,56 @@ def register():
                         i, o, e = select.select([socketUDP], [], [], 2*t)
                         if i != []:
                             package_content, addr = i[0].recvfrom(struct.calcsize(udp_pdu))
-                            received = struct.unpack(udp_pdu, package_content)
-                            received = received_data(received)
+                            received_packet = struct.unpack(udp_pdu, package_content)
+                            received = received_data(received_packet)
                             debug("Received: bytes={}, pkg={}, id={}, rand={}, data={}".format(sent, received.pkg, received.id, received.rand, received.data))
-                        else:
-                            state = NOT_REGISTERED
-                            msg("State = NOT_REGISTERED")
-                            # Start new register attempt
 
                     if(REG_NACK == received.pkg):
                         debug("Received: bytes={}, pkg={}, id={}, rand={}, data={}".format(sent, "REG_NACK", received.id, received.rand, received.data))
 
                         state = NOT_REGISTERED
                         msg("State = NOT_REGISTERED")
-                        #go to send REG_REQ
-                        msg("REG_NACK")
-                        sys.exit()
+
+                        continue
 
                     if(REG_REJ == received.pkg):
                         debug("Received: bytes={}, pkg={}, id={}, rand={}, data={}".format(sent, "REG_REJ", received.id, received.rand, received.data))
 
                         state = NOT_REGISTERED
                         msg("State = NOT_REGISTERED")
-                        break
 
                     if(INFO_ACK == received.pkg and WAIT_ACK_INFO == state):
                         debug("Received: bytes={}, pkg={}, id={}, rand={}, data={}".format(sent, "INFO_ACK", received.id, received.rand, received.data))
 
                         # Checking if the server data is correct
                         if(server_id == received.id and server_rand == received.rand):
+
                             state = REGISTERED
                             msg("State = REGISTERED")
-                            port_tcp = received.data # Puerto TCP del servidor por el que recibira datos del cliente
-                            periodic_communication(state, (server_id, server_rand, server_port)) # Crear clase para server info
+
+                            return
+                            #port_tcp = received.data # Puerto TCP del servidor por el que recibira datos del cliente
+                            #periodic_communication(state, (server_id, server_rand, server_port)) # Crear clase para server info
 
                     if(INFO_NACK == received.pkg and WAIT_ACK_INFO == state):
                         debug("Received: bytes={}, pkg={}, id={}, rand={}, data={}".format(sent, "INFO_NACK", received.id, received.rand, received.data))
 
                         # Checking if the server data is correct
                         if(server_id == received.id and server_rand == received.rand):
+
                             state = NOT_REGISTERED
                             msg("State = NOT_REGISTERED")
+
+                            # Reason the packet was rejected
                             msg(received.data)
-                            #go to send REG_REQ
-                            msg("INFO_NACK")
-                            sys.exit()
+
+                            continue
 
                     state = NOT_REGISTERED
                     msg("State = NOT_REGISTERED")
-                    return
+
+                    # Start new register attempt
+                    # ¿ break o register() o return o pass o NADA ?
 
         # Delay between registration processes
         time.sleep(u)
@@ -284,8 +285,8 @@ def periodic_communication(state = DISCONNECTED, server_info = None):
 
             if i != []:
                 package_content, addr = i[0].recvfrom(struct.calcsize(udp_pdu))
-                received_data = struct.unpack(udp_pdu, package_content)
-                received = received_data(received_data)
+                received_packet = struct.unpack(udp_pdu, package_content)
+                received = received_data(received_packet)
                 debug("Received: bytes={}, pkg={}, id={}, rand={}, data={}".format(sent, received.pkg, received.id, received.rand, received.data))
 
                 if ALIVE == received.pkg:
