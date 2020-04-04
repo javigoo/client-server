@@ -1,11 +1,12 @@
-#!/usr/bin/env python3.7
+#!/usr/bin/env python3
 # -*- coding: utf-8 -*-
 # vim: set fileencoding=utf-8 :
 
 """
 SYNOPSIS
 
-    client.py [-h,--help] [--version] [-d, --debug]
+    client.py [-#!/usr/bin/env python3
+    h,--help] [--version] [-d, --debug]
         [c, --configuration <file>, default=client.cfg]
 
 
@@ -112,12 +113,12 @@ class configuration_data:
         self.UDP = UDP
 
     def __str__(self):
-        return('Id = %s\PParams = %s\nLocal-TCP = %s\nServer = %s\nServer-UDP = %s' % (self.id, self.elements, self.TCP, self.server, self.UDP))
+        return('Id = %s\nParams = %s\nLocal-TCP = %s\nServer = %s\nServer-UDP = %s' % (self.id, self.elements, self.TCP, self.server, self.UDP))
 
 ################################### REGISTER ###################################
 
-def register(register_attempts = 1):
-    if register_attempts == 1:
+def register(register_attempts = 0):
+    if register_attempts == 0:
         debug("Register on the server initialized")
 
     # Timers and thresholds
@@ -128,14 +129,15 @@ def register(register_attempts = 1):
     p = 3
     q = 3
 
-    i = 1 # Increment variable for time
-    r = 2 # Max. register attempts
+    max_register_attempts = 0
+    timeout = 0
 
     state = NOT_REGISTERED
-    msg("State = NOT_REGISTERED")
-    debug("Register attempt = {}".format(register_attempts))
+    msg("State = NOT_REGISTERED, register attempt = {}".format(register_attempts))
 
     for package_attempt in range(1, n+1):
+
+        # Sending of the first registration request
         udp_addr = configuration.server, int(configuration.UDP)
         sent = send_package_udp(REG_REQ, configuration.id, "00000000", "", udp_addr)
         debug("Sent: bytes={}, pkg={}, id={}, rand={}, data={}".format(sent, "REG_REQ", configuration.id, "00000000", "" ))
@@ -144,84 +146,86 @@ def register(register_attempts = 1):
             state = WAIT_ACK_REG
             msg("State = WAIT_ACK_REG")
 
-        # Receive package
+        # Check if the sending of the first registration request was correct
         if sent != 0:
-            received = receive_package_udp()
-            debug("Received: bytes={}, pkg={}, id={}, rand={}, data={}".format(sent, received.pkg, received.id, received.rand, received.data))
 
-            server_id = received.id
-            server_rand = received.rand
-            server_port = received.data
+            # Set delay between packages
+            if(package_attempt <= p):
+                timeout = t
+            elif timeout < q*t:
+                timeout =+ t
 
-            if(REG_ACK == received.pkg and WAIT_ACK_REG == state):
+            # Check for server response
+            i, o, e = select.select([socketUDP], [], [], timeout)
+            if i != []:
+                package_content, addr = i[0].recvfrom(struct.calcsize(udp_pdu))
+                received = struct.unpack(udp_pdu, package_content)
+                received = received_data(received)
+                debug("Received: bytes={}, pkg={}, id={}, rand={}, data={}".format(sent, received.pkg, received.id, received.rand, received.data))
 
-                data = configuration.TCP+","+configuration.elements
-                addr = configuration.server, int(server_port)
-                sent = send_package_udp(REG_INFO, configuration.id, received.rand, data, addr)
-                debug("Sent: bytes={}, pkg={}, id={}, rand={}, data={}".format(sent, "REG_INFO", configuration.id, received.rand, data))
+                server_id = received.id
+                server_rand = received.rand
+                server_port = received.data
 
-                state = WAIT_ACK_INFO
-                msg("State = WAIT_ACK_INFO")
+                if(REG_ACK == received.pkg and WAIT_ACK_REG == state):
 
-                # Wait for confirmation of INFO_ACK
-                i, o, e = select.select([socketUDP], [], [], 2*t)
-                if i != []:
-                    package_content, addr = i[0].recvfrom(struct.calcsize(udp_pdu))
-                    received = struct.unpack(udp_pdu, package_content)
-                    received = received_data(received)
-                    debug("Received: bytes={}, pkg={}, id={}, rand={}, data={}".format(sent, received.pkg, received.id, received.rand, received.data))
-                else:
+                    data = configuration.TCP+","+configuration.elements
+                    addr = configuration.server, int(server_port)
+                    sent = send_package_udp(REG_INFO, configuration.id, received.rand, data, addr)
+                    debug("Sent: bytes={}, pkg={}, id={}, rand={}, data={}".format(sent, "REG_INFO", configuration.id, received.rand, data))
+
+                    state = WAIT_ACK_INFO
+                    msg("State = WAIT_ACK_INFO")
+
+                    # Wait for confirmation of INFO_ACK
+                    i, o, e = select.select([socketUDP], [], [], 2*t)
+                    if i != []:
+                        package_content, addr = i[0].recvfrom(struct.calcsize(udp_pdu))
+                        received = struct.unpack(udp_pdu, package_content)
+                        received = received_data(received)
+                        debug("Received: bytes={}, pkg={}, id={}, rand={}, data={}".format(sent, received.pkg, received.id, received.rand, received.data))
+                    else:
+                        state = NOT_REGISTERED
+                        msg("State = NOT_REGISTERED")
+                        # Start new register attempt
+
+                if(REG_NACK == received.pkg):
                     state = NOT_REGISTERED
                     msg("State = NOT_REGISTERED")
-                    # Start new register attempt
-
-            if(REG_NACK == received.pkg):
-                state = NOT_REGISTERED
-                msg("State = NOT_REGISTERED")
-                #go to send REG_REQ
-                msg("REG_NACK")
-                sys.exit()
-
-            if(REG_REJ == received.pkg):
-                state = NOT_REGISTERED
-                msg("State = NOT_REGISTERED")
-                break
-
-            if(INFO_ACK == received.pkg and WAIT_ACK_INFO == state):
-                # Checking if the server data is correct
-                if(server_id == received.id and server_rand == received.rand):
-                    state = REGISTERED
-                    msg("State = REGISTERED")
-                    port_tcp = received.data # Puerto TCP del servidor por el que recibira datos del cliente
-                    periodic_communication(state, (server_id, server_rand, server_port)) # Crear clase para server info
-
-            if(INFO_NACK == received.pkg and WAIT_ACK_INFO == state):
-                # Checking if the server data is correct
-                if(server_id == received.id and server_rand == received.rand):
-                    state = NOT_REGISTERED
-                    msg("State = NOT_REGISTERED")
-                    msg(received.data)
                     #go to send REG_REQ
-                    msg("INFO_NACK")
+                    msg("REG_NACK")
                     sys.exit()
 
-            state = NOT_REGISTERED
-            msg("State = NOT_REGISTERED")
-            return
+                if(REG_REJ == received.pkg):
+                    state = NOT_REGISTERED
+                    msg("State = NOT_REGISTERED")
+                    break
 
-        # Set delay between packages
-        else:
-            if(package_attempt <= p):
-                time.sleep(t)
-            elif i*t < q*t:
-                time.sleep(i*t)
-                i += 1
-            else:
-                time.sleep(q*t)
-            continue
+                if(INFO_ACK == received.pkg and WAIT_ACK_INFO == state):
+                    # Checking if the server data is correct
+                    if(server_id == received.id and server_rand == received.rand):
+                        state = REGISTERED
+                        msg("State = REGISTERED")
+                        port_tcp = received.data # Puerto TCP del servidor por el que recibira datos del cliente
+                        periodic_communication(state, (server_id, server_rand, server_port)) # Crear clase para server info
+
+                if(INFO_NACK == received.pkg and WAIT_ACK_INFO == state):
+                    # Checking if the server data is correct
+                    if(server_id == received.id and server_rand == received.rand):
+                        state = NOT_REGISTERED
+                        msg("State = NOT_REGISTERED")
+                        msg(received.data)
+                        #go to send REG_REQ
+                        msg("INFO_NACK")
+                        sys.exit()
+
+                state = NOT_REGISTERED
+                msg("State = NOT_REGISTERED")
+                return
+################################################################################
 
     # Control of number of subscription processes
-    if register_attempts<r:
+    if register_attempts < max_register_attempts:
         time.sleep(u)
         register_attempts += 1
         register(register_attempts)
@@ -322,6 +326,7 @@ def wait_connections():
 #################################### MAIN ######################################
 
 def main():
+
     setup()
     register()
     #periodic_communication()
