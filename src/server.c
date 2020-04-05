@@ -1,5 +1,7 @@
 #include "stdio.h"
-int main(int argc, char const *argv[]) {
+
+int main()
+{
   printf("%s\n", "Hello Server");
   return 0;
 }

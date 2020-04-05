@@ -1,4 +1,4 @@
-#!/usr/bin/env python3
+#!/usr/bin/env python3.7
 # -*- coding: utf-8 -*-
 # vim: set fileencoding=utf-8 :
 
@@ -38,6 +38,7 @@ VERSION
 
 import sys, os, traceback, optparse, time, random, struct
 import socket, select
+import threading
 
 __program__ = "client"
 __version__ = '0.0.1'
@@ -78,7 +79,7 @@ def msg(msg):
 
 def setup():
 
-    global state, socketTCP, socketUDP, configuration, udp_pdu
+    global state, socketTCP, socketUDP, configuration, udp_pdu, read_commands_thread
 
     state = DISCONNECTED
     msg("State = DISCONNECTED")
@@ -93,6 +94,8 @@ def setup():
     debug("Configuration data file loaded - Device: {}".format(configuration.id))
 
     udp_pdu = "1B 13s 9s 61s"
+
+    read_commands_thread = threading.Thread(target=read_commands, daemon = True)
 
 def read_configuration():
     with open(configuration_opt) as file:
@@ -275,13 +278,14 @@ class server_data:
 
 def periodic_communication():
     debug("Periodic communication with the server initialized")
+    state = REGISTERED
 
     # Timers and thresholds
     v = 2
     r = 2
     s = 3
 
-    a = 0 # Number of packets ALIVE that the client has not received
+    alives_not_received = 0
 
     while True:
 
@@ -300,13 +304,19 @@ def periodic_communication():
             if ALIVE == received.pkg:
                 debug("Received: bytes={}, pkg={}, id={}, rand={}, data={}".format(sent, "ALIVE", received.id, received.rand, received.data))
 
-                if(server_identification_data.id == received.id and server_identification_data.rand == received.rand and configuration.id[:5] == received.data ): # Hacer un parser de verdad
+                if(server_identification_data.id == received.id and server_identification_data.rand == received.rand and configuration.id == received.data ): # Hacer un parser de verdad
                     if state != SEND_ALIVE:
                         state = SEND_ALIVE
                         msg("State = SEND_ALIVE")
 
-                    # Abrir puerto TCP para recepcion de conexiones del servidor
-                    # Leer comandos de terminal
+                        read_commands_thread.start()
+
+                        # Abrir puerto TCP para recepcion de conexiones del servidor
+                else:
+                    state = NOT_REGISTERED
+                    msg("State = NOT_REGISTERED")
+                    return
+                    #return register() # nou proces de suscripcio
 
             if ALIVE_REJ == received.pkg:
                 debug("Received: bytes={}, pkg={}, id={}, rand={}, data={}".format(sent, "ALIVE_REJ", received.id, received.rand, received.data))
@@ -316,9 +326,9 @@ def periodic_communication():
                 return # Iniciar nou proces de suscripcio
 
         else:
-            if(state == SEND_ALIVE and a < s):
-                msg("Alive packet {} not received".format(a+1))
-                a += 1
+            if(state == SEND_ALIVE and alives_not_received < s):
+                msg("Alive packet {} not received".format(alives_not_received+1))
+                alives_not_received += 1
 
             else:
                 state = NOT_REGISTERED
@@ -327,6 +337,26 @@ def periodic_communication():
                 #return register() # nou proces de suscripcio
 
         time.sleep(v)
+
+################################ READ COMMANDS #################################
+
+def read_commands():
+    debug("Read_commands initialized")
+
+    while True:
+        command = sys.stdin.readline().strip()
+
+        if command == "stat":
+            msg("stat - NOT IMPLEMENTED")
+        elif command == "set":
+            msg("set - NOT IMPLEMENTED")
+        elif command == "send":
+            msg("send - NOT IMPLEMENTED")
+        elif command == "quit":
+            msg("quit - NOT IMPLEMENTED")
+        else:
+            msg('"{}" is not a valid command' .format(command))
+
 
 ################################# SEND DATA ####################################
 
