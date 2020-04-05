@@ -114,9 +114,17 @@ class configuration_data:
         self.TCP = TCP
         self.server = server
         self.UDP = UDP
+        self.element_value = {}
+
+        # Initialize the value of the elements
+        elements_list = self.elements.split(';')
+        for element in elements_list:
+            self.element_value[element] = None
+
 
     def __str__(self):
         return('Id = %s\nParams = %s\nLocal-TCP = %s\nServer = %s\nServer-UDP = %s' % (self.id, self.elements, self.TCP, self.server, self.UDP))
+
 
 ################################### REGISTER ###################################
 
@@ -338,31 +346,51 @@ def periodic_communication():
 
         time.sleep(v)
 
-################################ READ COMMANDS #################################
+################################## SEND DATA ###################################
 
 def read_commands():
-    debug("Read_commands initialized")
+    debug("Send data to the server initialized")
 
     while True:
-        command = sys.stdin.readline().strip()
+        command_line = sys.stdin.readline().strip()
+        command = command_line.split()
 
-        if command == "stat":
-            msg("stat - NOT IMPLEMENTED")
-        elif command == "set":
-            msg("set - NOT IMPLEMENTED")
-        elif command == "send":
-            msg("send - NOT IMPLEMENTED")
-        elif command == "quit":
-            msg("quit - NOT IMPLEMENTED")
+        if len(command) == 0:
+            pass
+        elif command[0] == "stat":
+            elements_stats()
+        elif command[0] == "set":
+            if len(command) == 3:
+                set_element_value(command[1], command[2])
+            else:
+                msg("Bad arguments, use:    set <element_identifier> <new_value>")
+        elif command[0] == "send":
+            if len(command) == 2:
+                send_data(command[1])
+            else:
+                msg("Bad arguments, use:    send <element_identifier>")
+        elif command[0] == "quit":
+            socketUDP.close()
+            socketTCP.close()
+            os._exit(1)
         else:
-            msg('"{}" is not a valid command' .format(command))
+            msg('"{}" is not a valid command'.format(command_line))
 
+def elements_stats():
+    print("\nId: {}\n".format(configuration.id))
+    for element in configuration.element_value:
+        print("{} - {}".format(element, configuration.element_value[element]))
+    print("\n")
 
-################################# SEND DATA ####################################
+def set_element_value(element_identifier, new_value):
+    if element_identifier in configuration.element_value:
+        # Mida maxima de 15 bytes
+        configuration.element_value[element_identifier] = new_value
+    else:
+        msg('"{}" is not part of the device elements'.format(element_identifier))
 
-def send_data():
-    debug("Send data to the server initialized")
-    pass
+def send_data(element_identifier):
+    print('"send" Not Implemented')
 
 ############################## WAIT CONNECTIONS ################################
 
@@ -377,7 +405,6 @@ def main():
     setup()
     register()
     periodic_communication()
-    #send_data()
     #wait_connections()
 
 if __name__ == '__main__':
