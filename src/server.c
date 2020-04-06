@@ -2,21 +2,36 @@
 #include <stdlib.h>
 #include <stdbool.h>
 #include <time.h>
+#include <string.h>
 
 /* Global variables */
 bool debug_flag = false;
+char configuration[] = "server.cfg"; /* A cuanto inicializo configuration[] ?*/
+
+/* Structures */
+struct configuration_data
+{
+  char id[13];
+  int udp_port;
+  int tcp_port;
+};
 
 /* Functions */
 void parse_args(int argc,char *argv[]);
 void debug(char msg[]);
 void msg(char msg[]);
+void read_configuration(struct configuration_data *configuration);
+
 
 /* Main function */
 int main(int argc,char *argv[])
 {
+  struct configuration_data configuration;
+
+  msg("Server start");
+
   parse_args(argc, argv);
-  debug("Debug activado");
-  msg("Mensajes activados");
+  read_configuration(&configuration);
 
   return 1;
 }
@@ -36,10 +51,10 @@ void parse_args(int argc,char *argv[])
           debug_flag = true;
           break;
         case 'c':
-          printf("cccccc\n");
+          strcpy(configuration, argv[arg+1]);
           break;
         case 'u':
-          printf("uuuuuu\n");
+          msg("Select authorized file - Not Implemented");
           break;
         default:
           fprintf(stderr, "Usage: %s [-d] "
@@ -78,4 +93,9 @@ void msg(char msg[])
 
   strftime(buffer, 9, "%H:%M:%S", tm_info);
   printf("%s: MSG -> %s\n", buffer, msg);
+}
+
+void read_configuration(struct configuration_data *configuration)
+{
+  debug("Reading configuration...");
 }
