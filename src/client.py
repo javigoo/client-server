@@ -5,9 +5,8 @@
 """
 SYNOPSIS
 
-    client.py [-#!/usr/bin/env python3
-    h,--help] [--version] [-d, --debug]
-        [c, --configuration <file>, default=client.cfg]
+    client.py [-h,--help] [--version] [-d, --debug]
+        [-c, --configuration <file>, default=client.cfg]
 
 
 DESCRIPTION

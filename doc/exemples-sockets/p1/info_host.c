@@ -19,7 +19,7 @@ void imprimirUs(char *nom)
 {
 	printf("   Per usar:  \n");
 	printf("           %s    <nom_host>\n",nom);
-	
+
 }
 
 /**
@@ -31,16 +31,16 @@ int main(int argc,char *argv[])
 	struct in_addr *a;
 
 
-	
+
 	/* Comprobo l'us correcte del programa */
-	if (argc!=2)
+	if (argc==2)
 	{
 		imprimirUs(argv[0]);
 		exit(0);
 	}
 
 	/* Demano l'entrada del host per nom */
-        ent=gethostbyname(argv[1]);	
+        ent=gethostbyname(argv[1]);
 	if(!ent)	/* No trobo el host */
 	{
 		printf("Error! No trobat: %s \n",argv[1]);
@@ -49,7 +49,7 @@ int main(int argc,char *argv[])
 
 	/* Host trobat */
 	printf("Resultat: \n");
-	
+
 	/* Nom del host */
 	printf("Nom Oficial:     %s\n",ent->h_name);
 
@@ -67,7 +67,7 @@ int main(int argc,char *argv[])
 		case AF_INET:
 			printf("AF_INET -> IPv4\n");
 			break;
-	
+
 
 		case AF_IPX:
 			printf("Novell IPX\n");
@@ -94,7 +94,7 @@ int main(int argc,char *argv[])
 			printf("Desconeguda\n");
 
 	}
-	
+
 	/* Numero de bytes de l'adreça: IPv4 -> 4, IPv6->16, etc. */
         printf("Longitud d'adreça: %d bytes\n",ent->h_length);
 
