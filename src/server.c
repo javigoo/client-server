@@ -42,8 +42,8 @@ void parse_args(int argc,char *argv[])
   int arg;
   for(arg = 0; arg < argc; arg++)
   {
-    char const *opt = argv[arg];
-    if (opt[0]== '-')
+    char const *opt = argv[arg];  /* char const ? */
+    if (opt[0] == '-')
     {
       switch (opt[1])
       {
@@ -51,11 +51,23 @@ void parse_args(int argc,char *argv[])
           debug_flag = true;
           break;
         case 'c':
-          strcpy(configuration, argv[arg+1]);
-          break;
+          if (argc-arg == 2)
+          {
+            printf("Reading '%s' configuration file\n", argv[arg+1]);
+            strcpy(configuration, argv[arg+1]);
+            break;
+          }
+          fprintf(stderr, "Usage: %s [-c <configuration file>, default=server.cfg]\n", argv[0]);
+          exit(0);
         case 'u':
-          msg("Select authorized file - Not Implemented");
-          break;
+          if (argc-arg >= 2)
+          {
+            printf("Reading '%s' authorized file\n", argv[arg+1]);
+            msg("Select authorized file - Not Implemented");
+            break;
+          }
+          fprintf(stderr, "Usage: %s [u <authorized file>, default=bbdd_dev.dat]\n", argv[0]);
+          exit(0);
         default:
           fprintf(stderr, "Usage: %s [-d] "
                           "[-c <configuration file>, default=server.cfg] "
