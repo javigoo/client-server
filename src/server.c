@@ -4,14 +4,20 @@
 #include <time.h>
 #include <string.h>
 
+#define MAX_AUTHORIZED_DEVICES 10
+#define ID_SIZE 13
+
 /* Global variables */
 bool debug_flag = false;
-char configuration_file[] = "server.cfg"; /* A cuanto inicializo configuration[] ?*/
+char configuration_file[] = "server.cfg"; /* A cuanto inicializo configuration_file[] ?*/
+char authorized_file[] = "bbdd_dev.dat"; /* A cuanto inicializo authorized_file[] ?*/
+char authorized_devices[MAX_AUTHORIZED_DEVICES][ID_SIZE];
+
 
 /* Structures */
 struct configuration_data
 {
-  char id[13];
+  char id[ID_SIZE];
   int udp_port;
   int tcp_port;
 };
@@ -21,22 +27,16 @@ void debug(char msg[]);
 void msg(char msg[]);
 void parse_args(int argc,char *argv[]);
 void read_configuration(struct configuration_data *configuration);
-
+void read_authorized(char authorized_file[]);
 
 /* Main function */
 int main(int argc,char *argv[])
 {
   struct configuration_data configuration;
 
-  msg("Server start");
-
   parse_args(argc, argv);
   read_configuration(&configuration);
-
-  printf("\nConfiguration:\n");
-  printf("id = %s\n", configuration.id);
-  printf("udp_port = %i\n", configuration.udp_port);
-  printf("tcp_port = %i\n", configuration.tcp_port);
+  read_authorized(authorized_file);
 
   return 1;
 }
@@ -96,16 +96,15 @@ void parse_args(int argc,char *argv[])
         case 'u':
           if (argc-arg >= 2)
           {
-            printf("Reading '%s' authorized file\n", argv[arg+1]);
-            msg("Select authorized file - Not Implemented");
+            strcpy(authorized_file, argv[arg+1]);
             break;
           }
-          fprintf(stderr, "Usage: %s [u <authorized file>, default=bbdd_dev.dat]\n", argv[0]);
+          fprintf(stderr, "Usage: %s [-u <authorized file>, default=bbdd_dev.dat]\n", argv[0]);
           exit(1);
         default:
           fprintf(stderr, "Usage: %s [-d] "
                           "[-c <configuration file>, default=server.cfg] "
-                          "[u <authorized file>, default=bbdd_dev.dat]\n", argv[0]);
+                          "[-u <authorized file>, default=bbdd_dev.dat]\n", argv[0]);
           exit(1);
         }
       }
@@ -114,8 +113,8 @@ void parse_args(int argc,char *argv[])
 
 void read_configuration(struct configuration_data *configuration)
 {
-  char buffer[255];
   FILE *fp;
+  char buffer[255];
   if ((fp = fopen(configuration_file, "r")) == NULL)
   {
     fprintf(stderr, "Error! opening file %s\n", configuration_file);
@@ -144,6 +143,26 @@ void read_configuration(struct configuration_data *configuration)
         }
       }
     }
+  }
+  fclose(fp);
+}
+
+void read_authorized(char authorized_file[])
+{
+  FILE *fp;
+  char buffer[255];
+  int num_device = 0;
+  if ((fp = fopen(authorized_file, "r")) == NULL)
+  {
+    fprintf(stderr, "Error! opening file %s\n", authorized_file);
+    exit(1);
+  }
+
+  while (fgets(buffer, 255, fp))
+  {
+    strcpy(authorized_devices[num_device], buffer);
+    authorized_devices[num_device][ID_SIZE-1] = '\0';
+    num_device++;
   }
 
   fclose(fp);
