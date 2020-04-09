@@ -27,6 +27,14 @@ struct configuration_data
   int tcp_port;
 };
 
+struct udp_pdu
+{
+  unsigned char pkg;
+  char id[13];
+  char rand[9];
+  char data[61];
+};
+
 /* Functions */
 void debug(char msg[]);
 void msg(char msg[]);
@@ -86,7 +94,7 @@ void parse_args(int argc,char *argv[])
   int arg;
   for(arg = 0; arg < argc; arg++)
   {
-    char const *opt = argv[arg];  /* char const ? */
+    char const *opt = argv[arg];
     if (opt[0] == '-')
     {
       switch (opt[1])
@@ -217,28 +225,32 @@ void initialize_threads()
 
 void listen_udp()
 {
-  /* Variables temporales */
-  #define LONGDADES	100
-  int a;
-  int laddr_cli;
-  char  dadcli[LONGDADES];
-  struct sockaddr_in addr_cli;
 
-  if(bind(udp_socket,(struct sockaddr *)&udp_addr,sizeof(struct sockaddr_in))<0)
+  /* Variables temporales */
+  int a;
+  socklen_t laddr_cli;
+  struct udp_pdu data;
+  struct sockaddr_in addr_cli;
+  char buff[300];
+
+  debug("UDP socket active");
+
+  if(bind(udp_socket, (struct sockaddr *)&udp_addr, sizeof(udp_addr))<0)
 	{
-		fprintf(stderr,"No puc fer el binding del socket!!!\n");
+		fprintf(stderr,"Error! binding UDP socket\n");
     exit(-2);
 	}
 
-	while(1)
+	while(true)
 	{
     laddr_cli=sizeof(struct sockaddr_in);
-		a=recvfrom(udp_socket,dadcli,LONGDADES,0,(struct sockaddr *)&addr_cli,&laddr_cli);
+		a=recvfrom(udp_socket, &data, sizeof(data), 0, (struct sockaddr *) &addr_cli, &laddr_cli);
 		if(a<0)
 		{
-			fprintf(stderr,"Error al recvfrom\n");
+			fprintf(stderr,"Error! UDP recvfrom\n");
 			exit(-2);
 		}
-    printf("PAQUETE\n");
+    sprintf(buff, "Received: bytes=%i, pkg=%d, id=%s, rand=%s, data=%s", a, data.pkg, data.id, data.rand, data.data);
+    debug(buff);
 	}
 }
