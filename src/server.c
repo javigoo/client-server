@@ -3,6 +3,8 @@
 #include <stdbool.h>
 #include <time.h>
 #include <string.h>
+#include <netinet/in.h>
+
 
 #define MAX_AUTHORIZED_DEVICES 10
 #define ID_SIZE 13
@@ -12,6 +14,7 @@ bool debug_flag = false;
 char configuration_file[] = "server.cfg"; /* A cuanto inicializo configuration_file[] ?*/
 char authorized_file[] = "bbdd_dev.dat"; /* A cuanto inicializo authorized_file[] ?*/
 char authorized_devices[MAX_AUTHORIZED_DEVICES][ID_SIZE];
+int udp_socket, tcp_socket = 0;
 
 
 /* Structures */
@@ -28,6 +31,8 @@ void msg(char msg[]);
 void parse_args(int argc,char *argv[]);
 void read_configuration(struct configuration_data *configuration);
 void read_authorized(char authorized_file[]);
+void open_sockets();
+void initialize_threads();
 
 /* Main function */
 int main(int argc,char *argv[])
@@ -37,6 +42,8 @@ int main(int argc,char *argv[])
   parse_args(argc, argv);
   read_configuration(&configuration);
   read_authorized(authorized_file);
+  open_sockets();
+  initialize_threads();
 
   return 1;
 }
@@ -166,4 +173,27 @@ void read_authorized(char authorized_file[])
   }
 
   fclose(fp);
+}
+
+void open_sockets()
+{
+  udp_socket = socket(AF_INET,SOCK_DGRAM,0);
+  if(udp_socket<0)
+  {
+    fprintf(stderr,"Error! opening UDP socket\n");
+    exit(1);
+  }
+
+  tcp_socket = socket(AF_INET,SOCK_STREAM,0);
+  if(tcp_socket<0)
+  {
+    fprintf(stderr,"Error! opening TCP socket\n");
+    exit(1);
+  }
+
+}
+
+void initialize_threads()
+{
+  debug("initialize_threads() not implemented");
 }
