@@ -4,7 +4,7 @@
 #include <errno.h>
 #include <time.h>
 #include <string.h>
- 
+
 #include<netinet/in.h>
 
 
@@ -31,7 +31,7 @@ int main(int argc,char *argv[])
 
 	/* Port a escoltar */
 	port=atoi(argv[1]);
-	
+
 	/* Avis per obertura de ports privilegiats */
 	if(port < 1024)
 	{
@@ -41,7 +41,7 @@ int main(int argc,char *argv[])
 
 
 	/* Opertura del socket INET+DGRAM=> UDP */
-	sock=socket(AF_INET,SOCK_DGRAM,0);	
+	sock=socket(AF_INET,SOCK_DGRAM,0);
 	if(sock<0)
 	{
 		fprintf(stderr,"No puc obrir socket!!!\n");
@@ -49,18 +49,21 @@ int main(int argc,char *argv[])
 		exit(-1);
 	}
 
-	/* Omplim l'estructura addr amb les adreces per les que acceptarem entrades */	
+	/* Omplim l'estructura addr amb les adreces per les que acceptarem entrades */
 	memset(&addr_server,0,sizeof (struct sockaddr_in));
 	addr_server.sin_family=AF_INET;
 	addr_server.sin_addr.s_addr=htonl(INADDR_ANY);
 	addr_server.sin_port=htons(port);
-	
+
+  /////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
+
+
 	if(bind(sock,(struct sockaddr *)&addr_server,sizeof(struct sockaddr_in))<0)
 	{
 		fprintf(stderr,"No puc fer el binding del socket!!!\n");
                 perror(argv[0]);
                 exit(-2);
-	}	
+	}
 
 	/* Bucle de servei */
 	while(1)
@@ -74,7 +77,7 @@ int main(int argc,char *argv[])
 			perror(argv[0]);
 			exit(-2);
 		}
-		
+
 		/* Contestem amb el temps */
 		temps=time(NULL);
 		sprintf(dadcli,"%s\n",ctime(&temps));

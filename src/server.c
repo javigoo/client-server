@@ -14,8 +14,10 @@ bool debug_flag = false;
 char configuration_file[] = "server.cfg"; /* A cuanto inicializo configuration_file[] ?*/
 char authorized_file[] = "bbdd_dev.dat"; /* A cuanto inicializo authorized_file[] ?*/
 char authorized_devices[MAX_AUTHORIZED_DEVICES][ID_SIZE];
+struct configuration_data configuration;
 int udp_socket, tcp_socket = 0;
-
+int udp_port, tcp_port;
+struct sockaddr_in	udp_addr, tcp_addr;
 
 /* Structures */
 struct configuration_data
@@ -31,18 +33,18 @@ void msg(char msg[]);
 void parse_args(int argc,char *argv[]);
 void read_configuration(struct configuration_data *configuration);
 void read_authorized(char authorized_file[]);
-void open_sockets();
+void initialize_sockets();
 void initialize_threads();
+void listen_udp();
+
 
 /* Main function */
 int main(int argc,char *argv[])
 {
-  struct configuration_data configuration;
-
   parse_args(argc, argv);
   read_configuration(&configuration);
   read_authorized(authorized_file);
-  open_sockets();
+  initialize_sockets();
   initialize_threads();
 
   return 1;
@@ -175,7 +177,7 @@ void read_authorized(char authorized_file[])
   fclose(fp);
 }
 
-void open_sockets()
+void initialize_sockets()
 {
   udp_socket = socket(AF_INET,SOCK_DGRAM,0);
   if(udp_socket<0)
@@ -184,6 +186,13 @@ void open_sockets()
     exit(1);
   }
 
+  udp_port = configuration.udp_port;
+
+	memset(&udp_addr,0,sizeof (struct sockaddr_in));
+	udp_addr.sin_family=AF_INET;
+	udp_addr.sin_addr.s_addr=htonl(INADDR_ANY);
+	udp_addr.sin_port=htons(udp_port);
+
   tcp_socket = socket(AF_INET,SOCK_STREAM,0);
   if(tcp_socket<0)
   {
@@ -191,9 +200,45 @@ void open_sockets()
     exit(1);
   }
 
+  tcp_port = configuration.tcp_port;
+
+	memset(&tcp_addr,0,sizeof (struct sockaddr_in));
+	tcp_addr.sin_family=AF_INET;
+	tcp_addr.sin_addr.s_addr=htonl(INADDR_ANY);
+	tcp_addr.sin_port=htons(tcp_port);
+
 }
 
 void initialize_threads()
 {
   debug("initialize_threads() not implemented");
+  listen_udp();
+}
+
+void listen_udp()
+{
+  /* Variables temporales */
+  #define LONGDADES	100
+  int a;
+  int laddr_cli;
+  char  dadcli[LONGDADES];
+  struct sockaddr_in addr_cli;
+
+  if(bind(udp_socket,(struct sockaddr *)&udp_addr,sizeof(struct sockaddr_in))<0)
+	{
+		fprintf(stderr,"No puc fer el binding del socket!!!\n");
+    exit(-2);
+	}
+
+	while(1)
+	{
+    laddr_cli=sizeof(struct sockaddr_in);
+		a=recvfrom(udp_socket,dadcli,LONGDADES,0,(struct sockaddr *)&addr_cli,&laddr_cli);
+		if(a<0)
+		{
+			fprintf(stderr,"Error al recvfrom\n");
+			exit(-2);
+		}
+    printf("PAQUETE\n");
+	}
 }
