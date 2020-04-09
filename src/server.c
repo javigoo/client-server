@@ -5,6 +5,18 @@
 #include <string.h>
 #include <netinet/in.h>
 
+/* Register packages */
+#define REG_REQ 0x00
+#define REG_INFO 0x01
+#define REG_ACK 0x02
+#define INFO_ACK 0x03
+#define REG_NACK 0x04
+#define INFO_NACK 0x05
+#define REG_REJ 0x06
+
+/* Periodic communication packages */
+#define ALIVE 0x10
+#define ALIVE_REJ 0x11
 
 #define MAX_AUTHORIZED_DEVICES 10
 #define ID_SIZE 13
@@ -64,14 +76,14 @@ int main(int argc,char *argv[])
 void msg(char msg[])
 {
   time_t timer;
-  char buffer[9];
+  char msg_buffer[9];
   struct tm* tm_info;
 
   timer = time(NULL);
   tm_info = localtime(&timer);
 
-  strftime(buffer, 9, "%H:%M:%S", tm_info);
-  printf("%s: MSG -> %s\n", buffer, msg);
+  strftime(msg_buffer, 9, "%H:%M:%S", tm_info);
+  printf("%s: MSG -> %s\n", msg_buffer, msg);
 }
 
 void debug(char msg[])
@@ -79,14 +91,14 @@ void debug(char msg[])
   if (debug_flag == true)
   {
     time_t timer;
-    char buffer[9];
+    char debug_buffer[9];
     struct tm* tm_info;
 
     timer = time(NULL);
     tm_info = localtime(&timer);
 
-    strftime(buffer, 9, "%H:%M:%S", tm_info);
-    printf("%s: DEBUG -> %s\n", buffer, msg);
+    strftime(debug_buffer, 9, "%H:%M:%S", tm_info);
+    printf("%s: DEBUG -> %s\n", debug_buffer, msg);
   }
 }
 
@@ -133,16 +145,16 @@ void parse_args(int argc,char *argv[])
 void read_configuration(struct configuration_data *configuration)
 {
   FILE *fp;
-  char buffer[255];
+  char parameter_buffer[255];
   if ((fp = fopen(configuration_file, "r")) == NULL)
   {
     fprintf(stderr, "Error! opening file %s\n", configuration_file);
     exit(1);
   }
 
-  while (fgets(buffer, 255, fp))
+  while (fgets(parameter_buffer, 255, fp))
   {
-    char *key_parameter = strtok(buffer, "= \n");
+    char *key_parameter = strtok(parameter_buffer, "= \n");
     if (key_parameter)
     {
       char *parameter_value = strtok(NULL, "= \n");
@@ -169,7 +181,7 @@ void read_configuration(struct configuration_data *configuration)
 void read_authorized(char authorized_file[])
 {
   FILE *fp;
-  char buffer[255];
+  char device_buffer[255];
   int num_device = 0;
   if ((fp = fopen(authorized_file, "r")) == NULL)
   {
@@ -177,9 +189,9 @@ void read_authorized(char authorized_file[])
     exit(1);
   }
 
-  while (fgets(buffer, 255, fp))
+  while (fgets(device_buffer, 255, fp))
   {
-    strcpy(authorized_devices[num_device], buffer);
+    strcpy(authorized_devices[num_device], device_buffer);
     authorized_devices[num_device][ID_SIZE-1] = '\0';
     num_device++;
   }
@@ -245,7 +257,7 @@ void listen_udp()
 
 	while(true)
 	{
-    len_addr=sizeof(struct sockaddr_in);
+    len_addr = sizeof(struct sockaddr_in);
 		received = recvfrom(udp_socket, &data, sizeof(data), 0, (struct sockaddr *) &addr, &len_addr);
 		if(received<0)
 		{
@@ -261,18 +273,27 @@ void listen_udp()
 
 void udp_package_process(struct udp_pdu data)
 {
-  char received_buffer[255];
-
-  if(check_authorized_device(data.id))
+  char msg_buffer[255];
+  if(data.pkg == REG_REQ)
   {
-    printf("Autorizado\n");
+    if(check_authorized_device(data.id))
+    {
+      if ((strcmp(data.rand, "00000000") == 0) & (strcmp(data.data, "") == 0))
+      {
+        msg("Attend REG_REQ package");
+      }
+    }
+    else
+    {
+      sprintf(msg_buffer, "Unauthorized device %s", data.id);
+      msg(msg_buffer);
+    }
   }
   else
   {
-    sprintf(received_buffer, "Unauthorized device %s", data.id);
-    msg(received_buffer);
+    sprintf(msg_buffer, "Recibido paquete %d", data.pkg);
+    msg(msg_buffer);
   }
-
 }
 
 bool check_authorized_device(char device[])
@@ -280,7 +301,6 @@ bool check_authorized_device(char device[])
   int num_device;
   for (num_device = 0; num_device < MAX_AUTHORIZED_DEVICES; num_device++)
   {
-    /* printf("%s == %s\n",authorized_devices[num_device], device); */
     if(strcmp(authorized_devices[num_device], device) == 0)
     {
       return true;
