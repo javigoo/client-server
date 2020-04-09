@@ -44,6 +44,8 @@ void read_authorized(char authorized_file[]);
 void initialize_sockets();
 void initialize_threads();
 void listen_udp();
+void udp_package_process(struct udp_pdu data);
+bool check_authorized_device(char device[]);
 
 
 /* Main function */
@@ -227,11 +229,11 @@ void listen_udp()
 {
 
   /* Variables temporales */
-  int a;
-  socklen_t laddr_cli;
+  int received;
+  socklen_t len_addr;
   struct udp_pdu data;
-  struct sockaddr_in addr_cli;
-  char buff[300];
+  struct sockaddr_in addr;
+  char received_buffer[255];
 
   debug("UDP socket active");
 
@@ -243,14 +245,46 @@ void listen_udp()
 
 	while(true)
 	{
-    laddr_cli=sizeof(struct sockaddr_in);
-		a=recvfrom(udp_socket, &data, sizeof(data), 0, (struct sockaddr *) &addr_cli, &laddr_cli);
-		if(a<0)
+    len_addr=sizeof(struct sockaddr_in);
+		received = recvfrom(udp_socket, &data, sizeof(data), 0, (struct sockaddr *) &addr, &len_addr);
+		if(received<0)
 		{
 			fprintf(stderr,"Error! UDP recvfrom\n");
 			exit(-2);
 		}
-    sprintf(buff, "Received: bytes=%i, pkg=%d, id=%s, rand=%s, data=%s", a, data.pkg, data.id, data.rand, data.data);
-    debug(buff);
+    sprintf(received_buffer, "Received: bytes=%i, pkg=%d, id=%s, rand=%s, data=%s", received, data.pkg, data.id, data.rand, data.data);
+    debug(received_buffer);
+
+    udp_package_process(data);
 	}
+}
+
+void udp_package_process(struct udp_pdu data)
+{
+  char received_buffer[255];
+
+  if(check_authorized_device(data.id))
+  {
+    printf("Autorizado\n");
+  }
+  else
+  {
+    sprintf(received_buffer, "Unauthorized device %s", data.id);
+    msg(received_buffer);
+  }
+
+}
+
+bool check_authorized_device(char device[])
+{
+  int num_device;
+  for (num_device = 0; num_device < MAX_AUTHORIZED_DEVICES; num_device++)
+  {
+    /* printf("%s == %s\n",authorized_devices[num_device], device); */
+    if(strcmp(authorized_devices[num_device], device) == 0)
+    {
+      return true;
+    }
+  }
+  return false;
 }
