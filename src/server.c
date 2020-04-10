@@ -30,6 +30,8 @@ struct configuration_data configuration;
 int udp_socket, tcp_socket = 0;
 int udp_port, tcp_port;
 struct sockaddr_in	udp_addr, tcp_addr;
+bool thread_flag = true;
+
 
 /* Structures */
 struct configuration_data
@@ -56,8 +58,9 @@ void read_authorized(char authorized_file[]);
 void initialize_sockets();
 void initialize_threads();
 void listen_udp();
-void udp_package_process(struct udp_pdu data);
+void process_udp_package(struct udp_pdu data);
 bool check_authorized_device(char device[]);
+void reg_req_pkg(struct udp_pdu data);
 
 
 /* Main function */
@@ -245,7 +248,6 @@ void listen_udp()
   socklen_t len_addr;
   struct udp_pdu data;
   struct sockaddr_in addr;
-  char received_buffer[255];
 
   debug("UDP socket active");
 
@@ -255,7 +257,7 @@ void listen_udp()
     exit(-2);
 	}
 
-	while(true)
+	while(thread_flag)
 	{
     len_addr = sizeof(struct sockaddr_in);
 		received = recvfrom(udp_socket, &data, sizeof(data), 0, (struct sockaddr *) &addr, &len_addr);
@@ -264,30 +266,20 @@ void listen_udp()
 			fprintf(stderr,"Error! UDP recvfrom\n");
 			exit(-2);
 		}
-    sprintf(received_buffer, "Received: bytes=%i, pkg=%d, id=%s, rand=%s, data=%s", received, data.pkg, data.id, data.rand, data.data);
-    debug(received_buffer);
-
-    udp_package_process(data);
+    process_udp_package(data);
 	}
 }
 
-void udp_package_process(struct udp_pdu data)
+void process_udp_package(struct udp_pdu data)
 {
   char msg_buffer[255];
   if(data.pkg == REG_REQ)
   {
-    if(check_authorized_device(data.id))
-    {
-      if ((strcmp(data.rand, "00000000") == 0) & (strcmp(data.data, "") == 0))
-      {
-        msg("Attend REG_REQ package");
-      }
-    }
-    else
-    {
-      sprintf(msg_buffer, "Unauthorized device %s", data.id);
-      msg(msg_buffer);
-    }
+    sprintf(msg_buffer, "Received: bytes=%li, pkg=%s, id=%s, rand=%s, data=%s", sizeof(data), "REG_REQ", data.id, data.rand, data.data);
+    debug(msg_buffer);
+
+    reg_req_pkg(data);
+
   }
   else
   {
@@ -307,4 +299,48 @@ bool check_authorized_device(char device[])
     }
   }
   return false;
+}
+
+void reg_req_pkg(struct udp_pdu data)
+{
+  int sent;
+  socklen_t len_addr;
+  struct sockaddr_in addr;
+  struct udp_pdu reg_ack_pdu;
+  char msg_buffer[255];
+
+  if(check_authorized_device(data.id))
+  {
+    if ((strcmp(data.rand, "00000000") == 0) & (strcmp(data.data, "") == 0))
+    {
+      /* Estado cliente (struct), abrir port udp. struct reg_ack_pdu, */
+      reg_ack_pdu.pkg = REG_ACK;
+      strcpy(reg_ack_pdu.id, configuration.id);
+      strcpy(reg_ack_pdu.rand, "10101010");
+      strcpy(reg_ack_pdu.data, "2020");
+
+      /* El sendto peta, creo que es por temas del addr*/
+
+      len_addr = sizeof(struct sockaddr_in);
+      sent = sendto(udp_socket, &reg_ack_pdu, sizeof(reg_ack_pdu), 0, (struct sockaddr *) &addr, len_addr);
+
+      if(sent<0)
+      {
+        fprintf(stderr,"Error! UDP sendto\n");
+        exit(-2);
+      }
+
+      sprintf(msg_buffer, "Sent: bytes=%li, pkg=%s, id=%s, rand=%s, data=%s", sizeof(sent), "REG_ACK", reg_ack_pdu.id, reg_ack_pdu.rand, reg_ack_pdu.data);
+      debug(msg_buffer);
+    }
+    else
+    {
+      msg("Datos incorrectos");
+    }
+  }
+  else
+  {
+    sprintf(msg_buffer, "Unauthorized device %s", data.id);
+    msg(msg_buffer);
+  }
 }
