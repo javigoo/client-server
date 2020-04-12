@@ -4,6 +4,9 @@
 #include <time.h>
 #include <string.h>
 #include <netinet/in.h>
+#include <sys/time.h>
+#include <sys/types.h>
+#include <unistd.h>
 
 /* Client states */
 #define DISCONNECTED 0xa0
@@ -76,6 +79,7 @@ void listen_udp();
 void process_udp_package(struct udp_pdu data, struct sockaddr_in addr);
 bool check_authorized_device(char device[]);
 void reg_req_pkg(struct udp_pdu data, struct sockaddr_in addr);
+void reg_info_pkg();
 
 /* Main function */
 int main(int argc,char *argv[])
@@ -360,6 +364,8 @@ void reg_req_pkg(struct udp_pdu data, struct sockaddr_in addr)
   char msg_buffer[255];
   int rand_number;
   char rand_number_str[9];
+  struct sockaddr_in	new_addr_server_udp;
+  char tmp_port[255];
 
   /* Setting new client info */
   /*(Esto deberia realizarse al leer los dispositivos autorizados)*/
@@ -378,11 +384,21 @@ void reg_req_pkg(struct udp_pdu data, struct sockaddr_in addr)
         sprintf(rand_number_str, "%i", rand_number);
         strcpy(client.rand, rand_number_str);
 
-        /*(Abrir puerto UDP)*/
+        /* Open new UDP port */
+        /*(Como obtener el nuevo puerto aleatorio?)*/
+        memset(&new_addr_server_udp,0,sizeof (struct sockaddr_in));
+        new_addr_server_udp.sin_family=AF_INET;
+        new_addr_server_udp.sin_addr.s_addr=htonl(INADDR_ANY);
+        new_addr_server_udp.sin_port = 0;
+        /*printf("%i\n", new_addr_server_udp.sin_port);*/
+
         reg_ack_pdu.pkg = REG_ACK;
         strcpy(reg_ack_pdu.id, configuration.id);
         strcpy(reg_ack_pdu.rand, client.rand);
-        strcpy(reg_ack_pdu.data, "9999");
+
+        /* Temporalmente utilizare el mismo puerto*/
+        sprintf(tmp_port, "%i", configuration.udp_port);
+        strcpy(reg_ack_pdu.data, tmp_port);
 
         len_addr = sizeof(addr);
         sent = sendto(udp_socket, &reg_ack_pdu, sizeof(reg_ack_pdu), 0, (struct sockaddr *) &addr, len_addr);
@@ -399,6 +415,8 @@ void reg_req_pkg(struct udp_pdu data, struct sockaddr_in addr)
         client.state = WAIT_INFO;
         sprintf(msg_buffer, "Device %s goes to state %s", client.id, "WAIT_INFO");
         msg(msg_buffer);
+
+        reg_info_pkg();
 
       }
       else
@@ -439,4 +457,34 @@ void reg_req_pkg(struct udp_pdu data, struct sockaddr_in addr)
     len_addr = sizeof(addr);
     sent = sendto(udp_socket, &reg_ack_pdu, sizeof(reg_ack_pdu), 0, (struct sockaddr *) &addr, len_addr);
   }
+}
+
+void reg_info_pkg()
+{
+  /* Timers and thresholds */
+  int s = 2;
+
+  fd_set rfds;
+  struct timeval tv;
+  int retval;
+
+  printf("Waiting for Wait_Info\n");
+
+    /* Watch stdin (fd 0) to see when it has input. */
+    FD_ZERO(&rfds);
+    FD_SET(0, &rfds);
+    FD_SET(udp_socket, &rfds);
+
+    /* Wait up to five seconds. */
+    tv.tv_sec = 5;
+    tv.tv_usec = 0;
+    retval = select(udp_socket+1, &rfds, NULL, NULL, &tv);
+
+    if (retval == -1)
+        perror("select()");
+    else if (retval)
+        printf("Data is available now.\n");
+        /* FD_ISSET(0, &rfds) will be true. */
+    else
+        printf("No data within five seconds.\n");
 }
