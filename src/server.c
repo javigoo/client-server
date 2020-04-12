@@ -79,7 +79,7 @@ void listen_udp();
 void process_udp_package(struct udp_pdu data, struct sockaddr_in addr);
 bool check_authorized_device(char device[]);
 void reg_req_pkg(struct udp_pdu data, struct sockaddr_in addr);
-void reg_info_pkg();
+void reg_info_pkg(struct client_info client);
 
 /* Main function */
 int main(int argc,char *argv[])
@@ -377,7 +377,8 @@ void reg_req_pkg(struct udp_pdu data, struct sockaddr_in addr)
   {
     if ((strcmp(data.rand, "00000000") == 0) & (strcmp(data.data, "") == 0))
     {
-      if (client.state == DISCONNECTED) {
+      if (client.state == DISCONNECTED)
+      {
 
         /*(Realmente el rango de valores de rand_number es menor que 9999999-1000000)*/
         rand_number = (rand() % 1000000 + 9999999);
@@ -416,7 +417,7 @@ void reg_req_pkg(struct udp_pdu data, struct sockaddr_in addr)
         sprintf(msg_buffer, "Device %s goes to state %s", client.id, "WAIT_INFO");
         msg(msg_buffer);
 
-        reg_info_pkg();
+        reg_info_pkg(client);
 
       }
       else
@@ -459,32 +460,87 @@ void reg_req_pkg(struct udp_pdu data, struct sockaddr_in addr)
   }
 }
 
-void reg_info_pkg()
+void reg_info_pkg(struct client_info client)
 {
-  /* Timers and thresholds */
-  int s = 2;
-
+  int s, retval, sent;
   fd_set rfds;
   struct timeval tv;
-  int retval;
+  int received;
+  struct udp_pdu data;
+  struct sockaddr_in addr;
+  socklen_t len_addr;
+  char msg_buffer[255];
+  struct udp_pdu reg_info_pdu;
+  char tmp_port[255];
 
-  printf("Waiting for Wait_Info\n");
+  /* Timers and thresholds */
+  s = 2;
 
-    /* Watch stdin (fd 0) to see when it has input. */
-    FD_ZERO(&rfds);
-    FD_SET(0, &rfds);
-    FD_SET(udp_socket, &rfds);
+  /* Watch stdin (fd 0) to see when it has input. */
+  FD_ZERO(&rfds);
+  FD_SET(0, &rfds);
+  FD_SET(udp_socket, &rfds);
 
-    /* Wait up to five seconds. */
-    tv.tv_sec = 5;
-    tv.tv_usec = 0;
-    retval = select(udp_socket+1, &rfds, NULL, NULL, &tv);
+  /* Wait up to 's' seconds. */
+  tv.tv_sec = s;
+  tv.tv_usec = 0;
+  retval = select(udp_socket+1, &rfds, NULL, NULL, &tv);
 
-    if (retval == -1)
-        perror("select()");
-    else if (retval)
-        printf("Data is available now.\n");
-        /* FD_ISSET(0, &rfds) will be true. */
-    else
-        printf("No data within five seconds.\n");
+  if (retval == -1)
+  {
+      perror("select()");
+      exit(-1);
+  }
+  else if (retval)
+  {
+      if (FD_ISSET(udp_socket, &rfds))
+      {
+        len_addr = sizeof(struct sockaddr_in);
+        received = recvfrom(udp_socket, &data, sizeof(data), 0, (struct sockaddr *) &addr, &len_addr);
+        if(received<0)
+        {
+          fprintf(stderr,"Error! UDP recvfrom\n");
+          exit(-2);
+        }
+      }
+
+      if(data.pkg == REG_INFO)
+      {
+        sprintf(msg_buffer, "Received: bytes=%li, pkg=%s, id=%s, rand=%s, data=%s", sizeof(data), "REG_INFO", data.id, data.rand, data.data);
+        debug(msg_buffer);
+
+        if(check_authorized_device(data.id) & (strcmp(data.rand, client.rand) == 0))
+        {
+          client.state = REGISTERED;
+          sprintf(msg_buffer, "Device %s goes to state %s", client.id, "REGISTERED");
+          msg(msg_buffer);
+
+          reg_info_pdu.pkg = INFO_ACK;
+          strcpy(reg_info_pdu.id, configuration.id);
+          strcpy(reg_info_pdu.rand, client.rand);
+          sprintf(tmp_port, "%i", configuration.tcp_port);
+          strcpy(reg_info_pdu.data, tmp_port);
+
+          len_addr = sizeof(addr);
+          sent = sendto(udp_socket, &reg_info_pdu, sizeof(reg_info_pdu), 0, (struct sockaddr *) &addr, len_addr);
+
+          if(sent<0)
+          {
+            fprintf(stderr,"Error! UDP sendto\n");
+            exit(-2);
+          }
+
+          sprintf(msg_buffer, "Sent: bytes=%li, pkg=%s, id=%s, rand=%s, data=%s", sizeof(reg_info_pdu), "REG_INFO", reg_info_pdu.id, reg_info_pdu.rand, reg_info_pdu.data);
+          debug(msg_buffer);
+        }
+      }
+  }
+  else
+  {
+    client.state = DISCONNECTED;
+    sprintf(msg_buffer, "Device %s goes to state %s", client.id, "DISCONNECTED");
+    msg(msg_buffer);
+
+    exit(1);
+  }
 }
