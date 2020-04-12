@@ -5,6 +5,15 @@
 #include <string.h>
 #include <netinet/in.h>
 
+/* Client states */
+#define DISCONNECTED 0xa0
+#define NOT_REGISTERED 0xa1
+#define WAIT_ACK_REG 0xa2
+#define WAIT_INFO 0xa3
+#define WAIT_ACK_INFO 0xa4
+#define REGISTERED 0xa5
+#define SEND_ALIVE 0xa6
+
 /* Register packages */
 #define REG_REQ 0x00
 #define REG_INFO 0x01
@@ -23,15 +32,14 @@
 
 /* Global variables */
 bool debug_flag = false;
-char configuration_file[] = "server.cfg"; /* A cuanto inicializo configuration_file[] ?*/
-char authorized_file[] = "bbdd_dev.dat"; /* A cuanto inicializo authorized_file[] ?*/
+char configuration_file[] = "server.cfg";
+char authorized_file[] = "bbdd_dev.dat";
 char authorized_devices[MAX_AUTHORIZED_DEVICES][ID_SIZE];
 struct configuration_data configuration;
+struct sockaddr_in	addr_server_udp, addr_server_tcp;
 int udp_socket, tcp_socket = 0;
 int udp_port, tcp_port;
-struct sockaddr_in	udp_addr, tcp_addr;
 bool thread_flag = true;
-
 
 /* Structures */
 struct configuration_data
@@ -41,10 +49,17 @@ struct configuration_data
   int tcp_port;
 };
 
+struct client_info
+{
+  int state;
+  char id[ID_SIZE];
+  char rand[9];
+};
+
 struct udp_pdu
 {
   unsigned char pkg;
-  char id[13];
+  char id[ID_SIZE];
   char rand[9];
   char data[61];
 };
@@ -58,17 +73,17 @@ void read_authorized(char authorized_file[]);
 void initialize_sockets();
 void initialize_threads();
 void listen_udp();
-void process_udp_package(struct udp_pdu data);
+void process_udp_package(struct udp_pdu data, struct sockaddr_in addr);
 bool check_authorized_device(char device[]);
-void reg_req_pkg(struct udp_pdu data);
-
+void reg_req_pkg(struct udp_pdu data, struct sockaddr_in addr);
 
 /* Main function */
 int main(int argc,char *argv[])
 {
+  srand(time(NULL));
   parse_args(argc, argv);
   read_configuration(&configuration);
-  read_authorized(authorized_file);
+  read_authorized(authorized_file);   /*(Para cada dispositivo se deberia crear una instancia de struct client_info con state DISCONNECTED)*/
   initialize_sockets();
   initialize_threads();
 
@@ -86,7 +101,7 @@ void msg(char msg[])
   tm_info = localtime(&timer);
 
   strftime(msg_buffer, 9, "%H:%M:%S", tm_info);
-  printf("%s: MSG -> %s\n", msg_buffer, msg);
+  printf("%s: MSG\t-> %s\n", msg_buffer, msg);
 }
 
 void debug(char msg[])
@@ -101,13 +116,13 @@ void debug(char msg[])
     tm_info = localtime(&timer);
 
     strftime(debug_buffer, 9, "%H:%M:%S", tm_info);
-    printf("%s: DEBUG -> %s\n", debug_buffer, msg);
+    printf("%s: DEBUG\t-> %s\n", debug_buffer, msg);
   }
 }
 
 void parse_args(int argc,char *argv[])
 {
-  /* Lo he hecho de esta forma porque no estoy seguro de poder utilizar <getopt.h> */
+  /*(Lo he hecho de esta forma porque no estoy seguro de poder utilizar <getopt.h>)*/
   int arg;
   for(arg = 0; arg < argc; arg++)
   {
@@ -213,10 +228,10 @@ void initialize_sockets()
 
   udp_port = configuration.udp_port;
 
-	memset(&udp_addr,0,sizeof (struct sockaddr_in));
-	udp_addr.sin_family=AF_INET;
-	udp_addr.sin_addr.s_addr=htonl(INADDR_ANY);
-	udp_addr.sin_port=htons(udp_port);
+	memset(&addr_server_udp,0,sizeof (struct sockaddr_in));
+	addr_server_udp.sin_family=AF_INET;
+	addr_server_udp.sin_addr.s_addr=htonl(INADDR_ANY);
+	addr_server_udp.sin_port=htons(udp_port);
 
   tcp_socket = socket(AF_INET,SOCK_STREAM,0);
   if(tcp_socket<0)
@@ -227,10 +242,10 @@ void initialize_sockets()
 
   tcp_port = configuration.tcp_port;
 
-	memset(&tcp_addr,0,sizeof (struct sockaddr_in));
-	tcp_addr.sin_family=AF_INET;
-	tcp_addr.sin_addr.s_addr=htonl(INADDR_ANY);
-	tcp_addr.sin_port=htons(tcp_port);
+	memset(&addr_server_tcp,0,sizeof (struct sockaddr_in));
+	addr_server_tcp.sin_family=AF_INET;
+	addr_server_tcp.sin_addr.s_addr=htonl(INADDR_ANY);
+	addr_server_tcp.sin_port=htons(tcp_port);
 
 }
 
@@ -242,16 +257,14 @@ void initialize_threads()
 
 void listen_udp()
 {
-
-  /* Variables temporales */
   int received;
-  socklen_t len_addr;
   struct udp_pdu data;
   struct sockaddr_in addr;
+  socklen_t len_addr;
 
   debug("UDP socket active");
 
-  if(bind(udp_socket, (struct sockaddr *)&udp_addr, sizeof(udp_addr))<0)
+  if(bind(udp_socket, (struct sockaddr *)&addr_server_udp, sizeof(addr_server_udp))<0)
 	{
 		fprintf(stderr,"Error! binding UDP socket\n");
     exit(-2);
@@ -266,25 +279,63 @@ void listen_udp()
 			fprintf(stderr,"Error! UDP recvfrom\n");
 			exit(-2);
 		}
-    process_udp_package(data);
+    process_udp_package(data, addr);
 	}
 }
 
-void process_udp_package(struct udp_pdu data)
+void process_udp_package(struct udp_pdu data, struct sockaddr_in addr)
 {
   char msg_buffer[255];
+
   if(data.pkg == REG_REQ)
   {
     sprintf(msg_buffer, "Received: bytes=%li, pkg=%s, id=%s, rand=%s, data=%s", sizeof(data), "REG_REQ", data.id, data.rand, data.data);
     debug(msg_buffer);
 
-    reg_req_pkg(data);
+    reg_req_pkg(data, addr);
 
   }
-  else
+  else if(data.pkg == REG_INFO)
   {
-    sprintf(msg_buffer, "Recibido paquete %d", data.pkg);
-    msg(msg_buffer);
+    sprintf(msg_buffer, "Received: bytes=%li, pkg=%s, id=%s, rand=%s, data=%s", sizeof(data), "REG_INFO", data.id, data.rand, data.data);
+    debug(msg_buffer);
+
+    /* Tratar paquete */
+  }
+  else if(data.pkg == REG_ACK)
+  {
+    sprintf(msg_buffer, "Received: bytes=%li, pkg=%s, id=%s, rand=%s, data=%s", sizeof(data), "REG_ACK", data.id, data.rand, data.data);
+    debug(msg_buffer);
+
+    /* Tratar paquete */
+  }
+  else if(data.pkg == INFO_ACK)
+  {
+    sprintf(msg_buffer, "Received: bytes=%li, pkg=%s, id=%s, rand=%s, data=%s", sizeof(data), "INFO_ACK", data.id, data.rand, data.data);
+    debug(msg_buffer);
+
+    /* Tratar paquete */
+  }
+  else if(data.pkg == REG_NACK)
+  {
+    sprintf(msg_buffer, "Received: bytes=%li, pkg=%s, id=%s, rand=%s, data=%s", sizeof(data), "REG_NACK", data.id, data.rand, data.data);
+    debug(msg_buffer);
+
+    /* Tratar paquete */
+  }
+  else if(data.pkg == INFO_NACK)
+  {
+    sprintf(msg_buffer, "Received: bytes=%li, pkg=%s, id=%s, rand=%s, data=%s", sizeof(data), "INFO_NACK", data.id, data.rand, data.data);
+    debug(msg_buffer);
+
+    /* Tratar paquete */
+  }
+  else if(data.pkg == REG_REJ)
+  {
+    sprintf(msg_buffer, "Received: bytes=%li, pkg=%s, id=%s, rand=%s, data=%s", sizeof(data), "REG_REJ", data.id, data.rand, data.data);
+    debug(msg_buffer);
+
+    /* Tratar paquete */
   }
 }
 
@@ -301,46 +352,91 @@ bool check_authorized_device(char device[])
   return false;
 }
 
-void reg_req_pkg(struct udp_pdu data)
+void reg_req_pkg(struct udp_pdu data, struct sockaddr_in addr)
 {
   int sent;
   socklen_t len_addr;
-  struct sockaddr_in addr;
   struct udp_pdu reg_ack_pdu;
   char msg_buffer[255];
+  int rand_number;
+  char rand_number_str[9];
 
-  if(check_authorized_device(data.id))
+  /* Setting new client info */
+  /*(Esto deberia realizarse al leer los dispositivos autorizados)*/
+  struct client_info client;
+  client.state = DISCONNECTED;
+  strcpy(client.id, data.id);
+
+  if(check_authorized_device(client.id))
   {
     if ((strcmp(data.rand, "00000000") == 0) & (strcmp(data.data, "") == 0))
     {
-      /* Estado cliente (struct), abrir port udp. struct reg_ack_pdu, */
-      reg_ack_pdu.pkg = REG_ACK;
-      strcpy(reg_ack_pdu.id, configuration.id);
-      strcpy(reg_ack_pdu.rand, "10101010");
-      strcpy(reg_ack_pdu.data, "2020");
+      if (client.state == DISCONNECTED) {
 
-      /* El sendto peta, creo que es por temas del addr*/
+        /*(Realmente el rango de valores de rand_number es menor que 9999999-1000000)*/
+        rand_number = (rand() % 1000000 + 9999999);
+        sprintf(rand_number_str, "%i", rand_number);
+        strcpy(client.rand, rand_number_str);
 
-      len_addr = sizeof(struct sockaddr_in);
-      sent = sendto(udp_socket, &reg_ack_pdu, sizeof(reg_ack_pdu), 0, (struct sockaddr *) &addr, len_addr);
+        /*(Abrir puerto UDP)*/
+        reg_ack_pdu.pkg = REG_ACK;
+        strcpy(reg_ack_pdu.id, configuration.id);
+        strcpy(reg_ack_pdu.rand, client.rand);
+        strcpy(reg_ack_pdu.data, "9999");
 
-      if(sent<0)
-      {
-        fprintf(stderr,"Error! UDP sendto\n");
-        exit(-2);
+        len_addr = sizeof(addr);
+        sent = sendto(udp_socket, &reg_ack_pdu, sizeof(reg_ack_pdu), 0, (struct sockaddr *) &addr, len_addr);
+
+        if(sent<0)
+        {
+          fprintf(stderr,"Error! UDP sendto\n");
+          exit(-2);
+        }
+
+        sprintf(msg_buffer, "Sent: bytes=%li, pkg=%s, id=%s, rand=%s, data=%s", sizeof(reg_ack_pdu), "REG_ACK", reg_ack_pdu.id, reg_ack_pdu.rand, reg_ack_pdu.data);
+        debug(msg_buffer);
+
+        client.state = WAIT_INFO;
+        sprintf(msg_buffer, "Device %s goes to state %s", client.id, "WAIT_INFO");
+        msg(msg_buffer);
+
       }
+      else
+      {
+        client.state = DISCONNECTED;
+        sprintf(msg_buffer, "Device %s goes to state %s", client.id, "DISCONNECTED");
+        msg(msg_buffer);
 
-      sprintf(msg_buffer, "Sent: bytes=%li, pkg=%s, id=%s, rand=%s, data=%s", sizeof(sent), "REG_ACK", reg_ack_pdu.id, reg_ack_pdu.rand, reg_ack_pdu.data);
-      debug(msg_buffer);
+        /*(Finalizar registro. exit()?)*/
+      }
     }
     else
     {
-      msg("Datos incorrectos");
+      client.state = DISCONNECTED;
+      sprintf(msg_buffer, "Device %s goes to state %s", client.id, "DISCONNECTED");
+      msg(msg_buffer);
+
+      reg_ack_pdu.pkg = REG_REJ;
+      strcpy(reg_ack_pdu.id, configuration.id);
+      strcpy(reg_ack_pdu.rand, "00000000");
+      strcpy(reg_ack_pdu.data, "Discrepancy with identification data");
+
+      len_addr = sizeof(addr);
+      sent = sendto(udp_socket, &reg_ack_pdu, sizeof(reg_ack_pdu), 0, (struct sockaddr *) &addr, len_addr);
     }
   }
   else
   {
-    sprintf(msg_buffer, "Unauthorized device %s", data.id);
+    client.state = DISCONNECTED;
+    sprintf(msg_buffer, "Device %s goes to state %s", client.id, "DISCONNECTED");
     msg(msg_buffer);
+
+    reg_ack_pdu.pkg = REG_REJ;
+    strcpy(reg_ack_pdu.id, configuration.id);
+    strcpy(reg_ack_pdu.rand, "00000000");
+    strcpy(reg_ack_pdu.data, "Unauthorized device");
+
+    len_addr = sizeof(addr);
+    sent = sendto(udp_socket, &reg_ack_pdu, sizeof(reg_ack_pdu), 0, (struct sockaddr *) &addr, len_addr);
   }
 }
