@@ -79,9 +79,9 @@ void initialize_threads();
 void listen_udp();
 void process_udp_package(struct udp_pdu data, struct sockaddr_in addr);
 bool check_authorized_device(char device[]);
-void reg_req_pkg(struct udp_pdu data, struct client_info client, struct sockaddr_in addr);
-void reg_info_pkg(struct client_info client);
-void alive_pkg(struct udp_pdu data, struct client_info client, struct sockaddr_in addr);
+void reg_req_pkg(struct udp_pdu data, struct sockaddr_in addr);
+void reg_info_pkg(int client_num);
+void alive_pkg(struct udp_pdu data, struct sockaddr_in addr);
 int get_client(char id[ID_SIZE]);
 
 /* Main function */
@@ -239,7 +239,14 @@ void read_authorized(char authorized_file[])
 
 int get_client(char id[ID_SIZE])
 {
-  return 0;
+  int num_client;
+  for (num_client = 0; num_client < MAX_DEVICES; num_client++)
+  {
+    if (strcmp(clients[num_client].id, id) == 0) {
+      return num_client;
+    }
+  }
+  return -1;
 }
 
 void initialize_sockets()
@@ -311,19 +318,13 @@ void listen_udp()
 void process_udp_package(struct udp_pdu data, struct sockaddr_in addr)
 {
   char msg_buffer[255];
-  int client_num;
-  struct client_info client;
 
   if(data.pkg == REG_REQ)
   {
     sprintf(msg_buffer, "Received: bytes=%li, pkg=%s, id=%s, rand=%s, data=%s", sizeof(data), "REG_REQ", data.id, data.rand, data.data);
     debug(msg_buffer);
 
-    /* get_client seria mejor si devolviese un struct client_info */
-    client_num = get_client(data.id);
-    client = clients[client_num];
-
-    reg_req_pkg(data, client, addr);
+    reg_req_pkg(data, addr);
 
   }
   else if(data.pkg == ALIVE)
@@ -331,7 +332,7 @@ void process_udp_package(struct udp_pdu data, struct sockaddr_in addr)
     sprintf(msg_buffer, "Received: bytes=%li, pkg=%s, id=%s, rand=%s, data=%s", sizeof(data), "ALIVE", data.id, data.rand, data.data);
     debug(msg_buffer);
 
-    alive_pkg(data, client, addr);
+    alive_pkg(data, addr);
   }
 }
 
@@ -348,29 +349,25 @@ bool check_authorized_device(char device[])
   return false;
 }
 
-void reg_req_pkg(struct udp_pdu data, struct client_info client, struct sockaddr_in addr)
+void reg_req_pkg(struct udp_pdu data, struct sockaddr_in addr)
 {
   int sent;
   socklen_t len_addr;
   struct udp_pdu reg_ack_pdu;
   char msg_buffer[255];
-  int rand_number;
-  char rand_number_str[9];
   struct sockaddr_in	new_addr_server_udp;
   char tmp_port[255];
+  int client_num;
 
-  if(check_authorized_device(client.id))
+  if(check_authorized_device(data.id))
   {
+    /* get_client seria mejor si devolviese un struct client_info */
+    client_num = get_client(data.id);
+
     if ((strcmp(data.rand, "00000000") == 0) & (strcmp(data.data, "") == 0))
     {
-      if (client.state == DISCONNECTED)
+      if (clients[client_num].state == DISCONNECTED)
       {
-
-        /*(Realmente el rango de valores de rand_number es menor que 9999999-1000000)*/
-        rand_number = (rand() % 1000000 + 9999999);
-        sprintf(rand_number_str, "%i", rand_number);
-        strcpy(client.rand, rand_number_str);
-
         /* Open new UDP port */
         /*(Como obtener el nuevo puerto aleatorio?)*/
         memset(&new_addr_server_udp,0,sizeof (struct sockaddr_in));
@@ -381,7 +378,7 @@ void reg_req_pkg(struct udp_pdu data, struct client_info client, struct sockaddr
 
         reg_ack_pdu.pkg = REG_ACK;
         strcpy(reg_ack_pdu.id, configuration.id);
-        strcpy(reg_ack_pdu.rand, client.rand);
+        strcpy(reg_ack_pdu.rand, clients[client_num].rand);
 
         /* Temporalmente utilizare el mismo puerto*/
         sprintf(tmp_port, "%i", configuration.udp_port);
@@ -399,17 +396,17 @@ void reg_req_pkg(struct udp_pdu data, struct client_info client, struct sockaddr
         sprintf(msg_buffer, "Sent: bytes=%li, pkg=%s, id=%s, rand=%s, data=%s", sizeof(reg_ack_pdu), "REG_ACK", reg_ack_pdu.id, reg_ack_pdu.rand, reg_ack_pdu.data);
         debug(msg_buffer);
 
-        client.state = WAIT_INFO;
-        sprintf(msg_buffer, "Device %s goes to state %s", client.id, "WAIT_INFO");
+        clients[client_num].state = WAIT_INFO;
+        sprintf(msg_buffer, "Device %s goes to state %s", clients[client_num].id, "WAIT_INFO");
         msg(msg_buffer);
 
-        reg_info_pkg(client);
+        reg_info_pkg(client_num);
 
       }
       else
       {
-        client.state = DISCONNECTED;
-        sprintf(msg_buffer, "Device %s goes to state %s", client.id, "DISCONNECTED");
+        clients[client_num].state = DISCONNECTED;
+        sprintf(msg_buffer, "Device %s goes to state %s", clients[client_num].id, "DISCONNECTED");
         msg(msg_buffer);
 
         /*(Finalizar registro. exit()?)*/
@@ -417,8 +414,8 @@ void reg_req_pkg(struct udp_pdu data, struct client_info client, struct sockaddr
     }
     else
     {
-      client.state = DISCONNECTED;
-      sprintf(msg_buffer, "Device %s goes to state %s", client.id, "DISCONNECTED");
+      clients[client_num].state = DISCONNECTED;
+      sprintf(msg_buffer, "Device %s goes to state %s", clients[client_num].id, "DISCONNECTED");
       msg(msg_buffer);
 
       reg_ack_pdu.pkg = REG_REJ;
@@ -432,10 +429,6 @@ void reg_req_pkg(struct udp_pdu data, struct client_info client, struct sockaddr
   }
   else
   {
-    client.state = DISCONNECTED;
-    sprintf(msg_buffer, "Device %s goes to state %s", client.id, "DISCONNECTED");
-    msg(msg_buffer);
-
     reg_ack_pdu.pkg = REG_REJ;
     strcpy(reg_ack_pdu.id, configuration.id);
     strcpy(reg_ack_pdu.rand, "00000000");
@@ -446,7 +439,7 @@ void reg_req_pkg(struct udp_pdu data, struct client_info client, struct sockaddr
   }
 }
 
-void reg_info_pkg(struct client_info client)
+void reg_info_pkg(int client_num)
 {
   int s, retval, sent;
   fd_set rfds;
@@ -495,15 +488,15 @@ void reg_info_pkg(struct client_info client)
         sprintf(msg_buffer, "Received: bytes=%li, pkg=%s, id=%s, rand=%s, data=%s", sizeof(data), "REG_INFO", data.id, data.rand, data.data);
         debug(msg_buffer);
 
-        if(check_authorized_device(data.id) & (strcmp(data.rand, client.rand) == 0))
+        if(check_authorized_device(data.id) & (strcmp(data.rand, clients[client_num].rand) == 0))
         {
-          client.state = REGISTERED;
-          sprintf(msg_buffer, "Device %s goes to state %s", client.id, "REGISTERED");
+          clients[client_num].state = REGISTERED;
+          sprintf(msg_buffer, "Device %s goes to state %s", clients[client_num].id, "REGISTERED");
           msg(msg_buffer);
 
           reg_info_pdu.pkg = INFO_ACK;
           strcpy(reg_info_pdu.id, configuration.id);
-          strcpy(reg_info_pdu.rand, client.rand);
+          strcpy(reg_info_pdu.rand, clients[client_num].rand);
           sprintf(tmp_port, "%i", configuration.tcp_port);
           strcpy(reg_info_pdu.data, tmp_port);
 
@@ -522,13 +515,13 @@ void reg_info_pkg(struct client_info client)
         }
         else
         {
-          client.state = DISCONNECTED;
-          sprintf(msg_buffer, "Device %s goes to state %s", client.id, "DISCONNECTED");
+          clients[client_num].state = DISCONNECTED;
+          sprintf(msg_buffer, "Device %s goes to state %s", clients[client_num].id, "DISCONNECTED");
           msg(msg_buffer);
 
           reg_info_pdu.pkg = INFO_NACK;
           strcpy(reg_info_pdu.id, configuration.id);
-          strcpy(reg_info_pdu.rand, client.rand);
+          strcpy(reg_info_pdu.rand, clients[client_num].rand);
           strcpy(reg_info_pdu.data, "REG_INFO not correct");
 
           len_addr = sizeof(addr);
@@ -542,66 +535,74 @@ void reg_info_pkg(struct client_info client)
   }
   else
   {
-    client.state = DISCONNECTED;
-    sprintf(msg_buffer, "Device %s goes to state %s", client.id, "DISCONNECTED");
+    clients[client_num].state = DISCONNECTED;
+    sprintf(msg_buffer, "Device %s goes to state %s", clients[client_num].id, "DISCONNECTED");
     msg(msg_buffer);
 
     exit(1);
   }
 }
 
-void alive_pkg(struct udp_pdu data, struct client_info client, struct sockaddr_in addr)
+void alive_pkg(struct udp_pdu data, struct sockaddr_in addr)
 {
-  int w, x, retval, sent;
+  int w, x, retval, client_num;
   fd_set rfds;
   struct timeval tv;
   int received;
   socklen_t len_addr;
   char msg_buffer[255];
-  struct udp_pdu alive_pdu;
+  /*struct udp_pdu alive_pdu;*/
 
-  printf("%s %s\n", data.rand, client.rand);
-  if(strcmp(data.rand, client.rand) == 0)
+  client_num = get_client(data.id);
+
+  if(check_authorized_device(data.id))
   {
-    printf("\nOLEE\n");
-  }
-    /* Timers and thresholds */
-    w = 3;
-    x = 3;
-
-    /* Watch stdin (fd 0) to see when it has input. */
-    FD_ZERO(&rfds);
-    FD_SET(0, &rfds);
-    FD_SET(udp_socket, &rfds);
-
-    /* Wait up to 's' seconds. */
-    tv.tv_sec = w;
-    tv.tv_usec = 0;
-    retval = select(udp_socket+1, &rfds, NULL, NULL, &tv);
-
-    if (retval == -1)
+    if((strcmp(data.rand, clients[client_num].rand) == 0) && clients[client_num].state == REGISTERED)
     {
-        perror("select()");
-        exit(-1);
-    }
-    else if (retval)
-    {
-        if (FD_ISSET(udp_socket, &rfds))
-        {
-          len_addr = sizeof(struct sockaddr_in);
-          received = recvfrom(udp_socket, &data, sizeof(data), 0, (struct sockaddr *) &addr, &len_addr);
-          if(received<0)
+      /* Timers and thresholds */
+      w = 3;
+      x = 3;
+
+      /* Watch stdin (fd 0) to see when it has input. */
+      FD_ZERO(&rfds);
+      FD_SET(0, &rfds);
+      FD_SET(udp_socket, &rfds);
+
+      /* Wait up to 's' seconds. */
+      tv.tv_sec = w;
+      tv.tv_usec = 0;
+      retval = select(udp_socket+1, &rfds, NULL, NULL, &tv);
+
+      if (retval == -1)
+      {
+          perror("select()");
+          exit(-1);
+      }
+      else if (retval)
+      {
+          if (FD_ISSET(udp_socket, &rfds))
           {
-            fprintf(stderr,"Error! UDP recvfrom\n");
-            exit(-2);
+            len_addr = sizeof(struct sockaddr_in);
+            received = recvfrom(udp_socket, &data, sizeof(data), 0, (struct sockaddr *) &addr, &len_addr);
+            if(received<0)
+            {
+              fprintf(stderr,"Error! UDP recvfrom\n");
+              exit(-2);
+            }
           }
-        }
 
-        if(data.pkg == ALIVE)
-        {
-          sprintf(msg_buffer, "Received: bytes=%li, pkg=%s, id=%s, rand=%s, data=%s", sizeof(data), "ALIVE", data.id, data.rand, data.data);
-          debug(msg_buffer);
-        }
+          if(data.pkg == ALIVE)
+          {
+            sprintf(msg_buffer, "Received: bytes=%li, pkg=%s, id=%s, rand=%s, data=%s", sizeof(data), "ALIVE", data.id, data.rand, data.data);
+            debug(msg_buffer);
+          }
+      }
     }
-
+  }
 }
+
+
+/*
+*  THREADS
+*  2 CLIENTES
+*/
