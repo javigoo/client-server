@@ -46,6 +46,7 @@ struct client_info
   char id[ID_SIZE];
   int state;
   char rand[9];
+  int alives_not_received;
 };
 
 struct udp_pdu
@@ -83,6 +84,7 @@ void reg_req_pkg(struct udp_pdu data, struct sockaddr_in addr);
 void reg_info_pkg(int client_num);
 void wait_first_alive(struct udp_pdu data, struct sockaddr_in addr);
 void alive_pkg(struct udp_pdu data, struct sockaddr_in addr);
+void keep_alive(struct udp_pdu data, struct sockaddr_in addr);
 int get_client(char id[ID_SIZE]);
 
 /* Main function */
@@ -226,6 +228,7 @@ void read_authorized(char authorized_file[])
     /* Setting client info */
     strcpy(clients[num_device].id, authorized_devices[num_device]);
     clients[num_device].state = DISCONNECTED;
+    clients[num_device].alives_not_received = 0;
 
     /* Set random number */
     rand_number = (rand() % 1000000 + 9999999);
@@ -330,9 +333,7 @@ void process_udp_package(struct udp_pdu data, struct sockaddr_in addr)
   }
   else if(data.pkg == ALIVE)
   {
-    sprintf(msg_buffer, "Received: bytes=%li, pkg=%s, id=%s, rand=%s, data=%s", sizeof(data), "ALIVE", data.id, data.rand, data.data);
-    debug(msg_buffer);
-
+    printf("\npaquete\n");
     alive_pkg(data, addr);
   }
 }
@@ -514,7 +515,6 @@ void reg_info_pkg(int client_num)
           debug(msg_buffer);
 
           alive_pkg(data, addr);
-
         }
         else
         {
@@ -562,15 +562,12 @@ void alive_pkg(struct udp_pdu data, struct sockaddr_in addr)
   char msg_buffer[255];
   struct udp_pdu alive_pdu;
 
-  /* Timers and thresholds */
-  w = 3;
-  x = 3;
-
-  /*while x*/
   client_num = get_client(data.id);
+  while (clients[client_num].state == REGISTERED || clients[client_num].state == SEND_ALIVE) {
+    /* Timers and thresholds */
+    w = 3;
+    x = 3;
 
-  if(check_authorized_device(data.id) && (strcmp(data.rand, clients[client_num].rand) == 0))
-  {
     /* Watch stdin (fd 0) to see when it has input. */
     FD_ZERO(&rfds);
     FD_SET(0, &rfds);
@@ -597,22 +594,59 @@ void alive_pkg(struct udp_pdu data, struct sockaddr_in addr)
           fprintf(stderr,"Error! UDP recvfrom\n");
           exit(-2);
         }
+        client_num = get_client(data.id);
       }
 
-      /* Tratar pkg despues de alive */
-
-      if(clients[client_num].state == REGISTERED)
+      if(data.pkg == ALIVE)
       {
-        clients[client_num].state = SEND_ALIVE;
-        sprintf(msg_buffer, "Device %s goes to state %s", clients[client_num].id, "SEND_ALIVE");
+        sprintf(msg_buffer, "Received: bytes=%li, pkg=%s, id=%s, rand=%s, data=%s", sizeof(data), "ALIVE", data.id, data.rand, data.data);
+        debug(msg_buffer);
+
+        if(check_authorized_device(data.id) & (strcmp(data.rand, clients[client_num].rand) == 0))
+        {
+
+          /* PRIMER PAQUETE - state = REGISTERED */
+          if(clients[client_num].state == REGISTERED)
+          {
+            clients[client_num].state = SEND_ALIVE;
+            sprintf(msg_buffer, "Device %s goes to state %s", clients[client_num].id, "SEND_ALIVE");
+            msg(msg_buffer);
+          }
+
+          /* MANTENER ALIVE - state = SEND_ALIVE */
+          if(clients[client_num].state == SEND_ALIVE)
+          {
+            /*Enviar paquete alive*/
+            alive_pdu.pkg = ALIVE;
+            strcpy(alive_pdu.id, configuration.id);
+            strcpy(alive_pdu.rand, clients[client_num].rand);
+            strcpy(alive_pdu.data, clients[client_num].id);
+
+            len_addr = sizeof(addr);
+            sent = sendto(udp_socket, &alive_pdu, sizeof(alive_pdu), 0, (struct sockaddr *) &addr, len_addr);
+
+            if(sent<0)
+            {
+              fprintf(stderr,"Error! UDP sendto\n");
+              exit(-2);
+            }
+
+            sprintf(msg_buffer, "Sent: bytes=%li, pkg=%s, id=%s, rand=%s, data=%s", sizeof(alive_pdu), "ALIVE", alive_pdu.id, alive_pdu.rand, alive_pdu.data);
+            debug(msg_buffer);
+          }
+        }
+      }
+      else
+      {
+        clients[client_num].state = DISCONNECTED;
+        sprintf(msg_buffer, "Device %s goes to state %s", clients[client_num].id, "DISCONNECTED");
         msg(msg_buffer);
-      }
-      else if (clients[client_num].state == SEND_ALIVE)
-      {
-        alive_pdu.pkg = ALIVE;
+
+        /* Use another pdu? */
+        alive_pdu.pkg = ALIVE_REJ;
         strcpy(alive_pdu.id, configuration.id);
         strcpy(alive_pdu.rand, clients[client_num].rand);
-        strcpy(alive_pdu.data, clients[client_num].id);
+        strcpy(alive_pdu.data, "ALIVE not correct");
 
         len_addr = sizeof(addr);
         sent = sendto(udp_socket, &alive_pdu, sizeof(alive_pdu), 0, (struct sockaddr *) &addr, len_addr);
@@ -623,46 +657,28 @@ void alive_pkg(struct udp_pdu data, struct sockaddr_in addr)
           exit(-2);
         }
 
-        sprintf(msg_buffer, "Sent: bytes=%li, pkg=%s, id=%s, rand=%s, data=%s", sizeof(alive_pdu), "ALIVE", alive_pdu.id, alive_pdu.rand, alive_pdu.data);
+        sprintf(msg_buffer, "Sent: bytes=%li, pkg=%s, id=%s, rand=%s, data=%s", sizeof(alive_pdu), "ALIVE_REJ", alive_pdu.id, alive_pdu.rand, alive_pdu.data);
         debug(msg_buffer);
       }
-
     }
     else
     {
-      clients[client_num].state = DISCONNECTED;
-      sprintf(msg_buffer, "Device %s goes to state %s", clients[client_num].id, "DISCONNECTED");
-      msg(msg_buffer);
+      if(clients[client_num].state == SEND_ALIVE && clients[client_num].alives_not_received < x)
+      {
+        printf("Pkg not received = %i\n", clients[client_num].alives_not_received);
+        clients[client_num].alives_not_received = clients[client_num].alives_not_received + 1;
+      }
+      else
+      {
+        clients[client_num].state = DISCONNECTED;
+        sprintf(msg_buffer, "Device %s goes to state %s", clients[client_num].id, "DISCONNECTED");
+        msg(msg_buffer);
+      }
     }
-  }
-  else
-  {
-    clients[client_num].state = DISCONNECTED;
-    sprintf(msg_buffer, "Device %s goes to state %s", clients[client_num].id, "DISCONNECTED");
-    msg(msg_buffer);
-
-    /* Use another pdu? */
-    alive_pdu.pkg = ALIVE_REJ;
-    strcpy(alive_pdu.id, configuration.id);
-    strcpy(alive_pdu.rand, clients[client_num].rand);
-    strcpy(alive_pdu.data, "ALIVE_REJ not correct");
-
-    len_addr = sizeof(addr);
-    sent = sendto(udp_socket, &alive_pdu, sizeof(alive_pdu), 0, (struct sockaddr *) &addr, len_addr);
-
-    if(sent<0)
-    {
-      fprintf(stderr,"Error! UDP sendto\n");
-      exit(-2);
-    }
-
-    sprintf(msg_buffer, "Sent: bytes=%li, pkg=%s, id=%s, rand=%s, data=%s", sizeof(alive_pdu), "ALIVE_REJ", alive_pdu.id, alive_pdu.rand, alive_pdu.data);
-    debug(msg_buffer);
-    exit(1);
   }
 }
 
 /*
-*  THREADS
-*  2 CLIENTES
+*  forks - 2 CLIENTES
+*  THREADS - comandes
 */
