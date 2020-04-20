@@ -7,6 +7,7 @@
 #include <sys/time.h>
 #include <sys/types.h>
 #include <unistd.h>
+#include <pthread.h>
 
 /* Client states */
 #define DISCONNECTED 0xa0
@@ -32,6 +33,7 @@
 
 #define MAX_DEVICES 10
 #define ID_SIZE 13
+#define MAX_COMMAND_SIZE 4
 
 /* Structures */
 struct configuration_data
@@ -47,6 +49,8 @@ struct client_info
   int state;
   char rand[9];
   int alives_not_received;
+  char elements[61];
+  char ip[9];
 };
 
 struct udp_pdu
@@ -68,6 +72,7 @@ struct sockaddr_in	addr_server_udp, addr_server_tcp;
 int udp_socket, tcp_socket = 0;
 int udp_port, tcp_port;
 bool thread_flag = true;
+pthread_t udp_thread;
 
 /* Functions */
 void debug(char msg[]);
@@ -77,7 +82,10 @@ void read_configuration(struct configuration_data *configuration);
 void read_authorized(char authorized_file[]);
 void initialize_sockets();
 void initialize_threads();
-void listen_udp();
+void read_commands();
+void command_quit();
+void command_list();
+void *listen_udp();
 void process_udp_package(struct udp_pdu data, struct sockaddr_in addr);
 bool check_authorized_device(char device[]);
 void reg_req_pkg(struct udp_pdu data, struct sockaddr_in addr);
@@ -86,16 +94,19 @@ void wait_first_alive(struct udp_pdu data, struct sockaddr_in addr);
 void alive_pkg(struct udp_pdu data, struct sockaddr_in addr);
 void keep_alive(struct udp_pdu data, struct sockaddr_in addr);
 int get_client(char id[ID_SIZE]);
+char *get_string_state(int state);
 
 /* Main function */
 int main(int argc,char *argv[])
 {
   srand(time(NULL));
+
   parse_args(argc, argv);
   read_configuration(&configuration);
   read_authorized(authorized_file);
   initialize_sockets();
   initialize_threads();
+  read_commands();
 
   return 1;
 }
@@ -287,11 +298,75 @@ void initialize_sockets()
 
 void initialize_threads()
 {
-  debug("initialize_threads() not implemented");
-  listen_udp();
+  pthread_t udp_thread;
+
+  debug("UDP thread initialized");
+  pthread_create(&udp_thread, NULL, listen_udp, NULL);
+
 }
 
-void listen_udp()
+void read_commands()
+{
+  char command[MAX_COMMAND_SIZE];
+
+  while(true)
+  {
+    scanf("%4s", command);
+
+    if(strcmp(command, "quit") == 0)
+    {
+      command_quit();
+    }
+    else if(strcmp(command, "list") == 0)
+    {
+      command_list();
+    }
+  }
+}
+
+void command_quit()
+{
+  close(udp_socket);
+  close(tcp_socket);
+  pthread_cancel(udp_thread);
+  exit(1);
+}
+
+void command_list()
+{
+  int device;
+  printf("ID\t\tRNDM\t\tIP\t\tSTATE\t\tELEMENTS\n");
+  for (device = 0; device < MAX_DEVICES; device++) {
+    if (strcmp(clients[device].id, "") != 0) {
+      printf("%s\t%s\t%s\t%s\t%s\n",clients[device].id, clients[device].rand, "127.0.0.1", get_string_state(clients[device].state), clients[device].elements);
+    }
+  }
+}
+
+char *get_string_state(int state)
+{
+  switch (state)
+  {
+    case DISCONNECTED:
+      return "DISCONNECTED";
+    case NOT_REGISTERED:
+      return "NOT_REGISTERED";
+    case WAIT_ACK_REG:
+      return "WAIT_ACK_REG";
+    case WAIT_INFO:
+      return "WAIT_INFO";
+    case WAIT_ACK_INFO:
+      return "WAIT_ACK_INFO";
+    case REGISTERED:
+      return "REGISTERED";
+    case SEND_ALIVE:
+      return "SEND_ALIVE";
+    default:
+      return NULL;
+  }
+}
+
+void *listen_udp()
 {
   int received;
   struct udp_pdu data;
@@ -317,6 +392,7 @@ void listen_udp()
 		}
     process_udp_package(data, addr);
 	}
+  return NULL;
 }
 
 void process_udp_package(struct udp_pdu data, struct sockaddr_in addr)
@@ -333,7 +409,6 @@ void process_udp_package(struct udp_pdu data, struct sockaddr_in addr)
   }
   else if(data.pkg == ALIVE)
   {
-    printf("\npaquete\n");
     alive_pkg(data, addr);
   }
 }
@@ -453,6 +528,7 @@ void reg_info_pkg(int client_num)
   char msg_buffer[255];
   struct udp_pdu reg_info_pdu;
   char tmp_port[255];
+  char *elements;
 
   /* Timers and thresholds */
   s = 2;
@@ -495,6 +571,11 @@ void reg_info_pkg(int client_num)
           clients[client_num].state = REGISTERED;
           sprintf(msg_buffer, "Device %s goes to state %s", clients[client_num].id, "REGISTERED");
           msg(msg_buffer);
+
+          /* Guardamos los datos*/
+          strtok(data.data, ",");
+          elements = strtok(NULL, ",");
+          strcpy(clients[client_num].elements, elements);
 
           reg_info_pdu.pkg = INFO_ACK;
           strcpy(reg_info_pdu.id, configuration.id);
@@ -562,11 +643,12 @@ void alive_pkg(struct udp_pdu data, struct sockaddr_in addr)
   char msg_buffer[255];
   struct udp_pdu alive_pdu;
 
+  /* Timers and thresholds */
+  w = 3;
+  x = 3;
+
   client_num = get_client(data.id);
   while (clients[client_num].state == REGISTERED || clients[client_num].state == SEND_ALIVE) {
-    /* Timers and thresholds */
-    w = 3;
-    x = 3;
 
     /* Watch stdin (fd 0) to see when it has input. */
     FD_ZERO(&rfds);
@@ -665,7 +747,6 @@ void alive_pkg(struct udp_pdu data, struct sockaddr_in addr)
     {
       if(clients[client_num].state == SEND_ALIVE && clients[client_num].alives_not_received < x)
       {
-        printf("Pkg not received = %i\n", clients[client_num].alives_not_received);
         clients[client_num].alives_not_received = clients[client_num].alives_not_received + 1;
       }
       else
@@ -677,8 +758,3 @@ void alive_pkg(struct udp_pdu data, struct sockaddr_in addr)
     }
   }
 }
-
-/*
-*  forks - 2 CLIENTES
-*  THREADS - comandes
-*/
